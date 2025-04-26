@@ -142,7 +142,7 @@ export interface Database {
           nombre_grupo: string
           nombre_mostrar: string
           curso_corto: string | null
-          materia_corta: string | null
+          materia_codigo: string | null
         }
         Insert: {
           id?: number
@@ -150,7 +150,7 @@ export interface Database {
           nombre_grupo: string
           nombre_mostrar: string
           curso_corto?: string | null
-          materia_corta?: string | null
+          materia_codigo?: string | null
         }
         Update: {
           id?: number
@@ -158,7 +158,24 @@ export interface Database {
           nombre_grupo?: string
           nombre_mostrar?: string
           curso_corto?: string | null
-          materia_corta?: string | null
+          materia_codigo?: string | null
+        }
+      }
+      configuracion: {
+        Row: {
+          id: number
+          nombre_institucion: string
+          logo_url: string | null
+        }
+        Insert: {
+          id: number
+          nombre_institucion: string
+          logo_url?: string | null
+        }
+        Update: {
+          id?: number
+          nombre_institucion?: string
+          logo_url?: string | null
         }
       }
       usuarios: {
