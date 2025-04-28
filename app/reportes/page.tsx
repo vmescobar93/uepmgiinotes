@@ -12,10 +12,10 @@ import { useToast } from "@/components/ui/use-toast"
 import { supabase } from "@/lib/supabase"
 import { CentralizadorInterno } from "@/components/reportes/centralizador-interno"
 import { CentralizadorMinedu } from "@/components/reportes/centralizador-minedu"
-import { BoletinNotas, generarBoletinPDF } from "@/components/reportes/boletin-notas"
+import { BoletinNotas } from "@/components/reportes/boletin-notas"
 import { RankingAlumnos } from "@/components/reportes/ranking-alumnos"
+import { generarTodosBoletinesPDF } from "@/lib/pdf-generators"
 import type { Database } from "@/types/supabase"
-import { jsPDF } from "jspdf"
 import { getConfiguracion } from "@/lib/config"
 
 type Curso = Database["public"]["Tables"]["cursos"]["Row"]
@@ -275,13 +275,13 @@ export default function ReportesPage() {
       return
     }
 
-    // Verificar si el curso es de nivel secundario
+    // Verificar si el curso es de nivel primario o secundario
     const cursoSeleccionado = cursos.find((c) => c.nombre_corto === selectedCurso)
-    if (cursoSeleccionado?.nivel !== "Secundaria") {
+    if (cursoSeleccionado?.nivel !== "Secundaria" && cursoSeleccionado?.nivel !== "Primaria") {
       toast({
         variant: "destructive",
         title: "Error",
-        description: "El centralizador MINEDU solo está disponible para cursos de nivel secundario.",
+        description: "El centralizador MINEDU solo está disponible para cursos de nivel primario y secundario.",
       })
       return
     }
@@ -500,27 +500,19 @@ export default function ReportesPage() {
         })
       }
 
-      // Crear un nuevo documento PDF
-      let doc = new jsPDF({ unit: "mm", format: "a4" })
-
-      // Generar boletín para cada alumno
+      // Obtener el objeto del curso
       const cursoObj = cursos.find((c) => c.nombre_corto === selectedCurso)
 
-      for (let i = 0; i < alumnos.length; i++) {
-        const alumnoActual = alumnos[i]
-        // No añadir salto de página para el primer alumno
-        doc = await generarBoletinPDF(
-          alumnoActual,
-          cursoObj,
-          materiasData,
-          todasCalificaciones,
-          config.nombre_institucion,
-          config.logo_url,
-          areaMap,
-          doc,
-          i > 0, // Añadir salto de página excepto para el primer alumno
-        )
-      }
+      // Generar todos los boletines
+      const doc = await generarTodosBoletinesPDF(
+        alumnos,
+        cursoObj,
+        materiasData,
+        todasCalificaciones,
+        config.nombre_institucion,
+        config.logo_url,
+        areaMap,
+      )
 
       // Guardar el documento combinado
       doc.save(`Boletines_${selectedCurso}.pdf`)
@@ -612,7 +604,8 @@ export default function ReportesPage() {
                     disabled={
                       !selectedCurso ||
                       isLoading ||
-                      cursos.find((c) => c.nombre_corto === selectedCurso)?.nivel !== "Secundaria"
+                      (cursos.find((c) => c.nombre_corto === selectedCurso)?.nivel !== "Secundaria" &&
+                        cursos.find((c) => c.nombre_corto === selectedCurso)?.nivel !== "Primaria")
                     }
                     variant="outline"
                   >

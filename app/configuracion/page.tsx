@@ -4,133 +4,72 @@ import type React from "react"
 
 import { useState, useEffect } from "react"
 import { MainLayout } from "@/components/layout/main-layout"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useToast } from "@/components/ui/use-toast"
-import { Loader2, Upload, Save } from "lucide-react"
-import { supabase } from "@/lib/supabase"
+import { Loader2 } from "lucide-react"
+import { LogoPreview } from "@/components/configuracion/logo-preview"
+
+interface Configuracion {
+  id: number
+  nombre_institucion: string
+  logo_url: string | null
+}
 
 export default function ConfiguracionPage() {
-  const [logoUrl, setLogoUrl] = useState<string | null>(null)
-  const [logoFile, setLogoFile] = useState<File | null>(null)
-  const [isUploading, setIsUploading] = useState(false)
-  const [nombreInstitucion, setNombreInstitucion] = useState("U.E. Plena María Goretti II")
+  const [configuracion, setConfiguracion] = useState<Configuracion | null>(null)
+  const [nombreInstitucion, setNombreInstitucion] = useState("")
+  const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
+  const [isUploading, setIsUploading] = useState(false)
   const { toast } = useToast()
 
-  // Cargar configuración existente
   useEffect(() => {
-    const fetchConfiguracion = async () => {
+    async function fetchConfiguracion() {
       try {
-        // Obtener la configuración de la institución
-        const { data: configData } = await supabase.from("configuracion").select("*").single()
+        setIsLoading(true)
+        console.log("Obteniendo configuración...")
+        const response = await fetch("/api/configuracion/general")
 
-        if (configData) {
-          if (configData.nombre_institucion) {
-            setNombreInstitucion(configData.nombre_institucion)
-          }
-
-          if (configData.logo_url) {
-            setLogoUrl(configData.logo_url)
-          }
+        if (!response.ok) {
+          const errorData = await response.json()
+          throw new Error(errorData.error || "Error al cargar la configuración")
         }
-      } catch (error) {
-        console.error("Error al cargar configuración:", error)
+
+        const data = await response.json()
+        console.log("Configuración obtenida:", data)
+        setConfiguracion(data)
+        setNombreInstitucion(data.nombre_institucion || "")
+      } catch (error: any) {
+        console.error("Error:", error)
+        toast({
+          title: "Error",
+          description: error.message || "No se pudo cargar la configuración",
+          variant: "destructive",
+        })
+      } finally {
+        setIsLoading(false)
       }
     }
 
     fetchConfiguracion()
-  }, [])
+  }, [toast])
 
-  // Manejar cambio de archivo
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0]
-
-      // Validar que sea una imagen
-      if (!file.type.startsWith("image/")) {
-        toast({
-          variant: "destructive",
-          title: "Error",
-          description: "El archivo debe ser una imagen (PNG, JPG, JPEG).",
-        })
-        return
-      }
-
-      // Validar tamaño (máximo 2MB)
-      if (file.size > 2 * 1024 * 1024) {
-        toast({
-          variant: "destructive",
-          title: "Error",
-          description: "La imagen no debe superar los 2MB.",
-        })
-        return
-      }
-
-      setLogoFile(file)
-
-      // Mostrar vista previa
-      const reader = new FileReader()
-      reader.onload = (event) => {
-        if (event.target?.result) {
-          setLogoUrl(event.target.result as string)
-        }
-      }
-      reader.readAsDataURL(file)
-    }
-  }
-
-  // Subir logo usando la API
-  const handleUploadLogo = async () => {
-    if (!logoFile) return
-
-    setIsUploading(true)
-
-    try {
-      // Crear FormData para enviar el archivo
-      const formData = new FormData()
-      formData.append("logo", logoFile)
-
-      // Enviar a la API
-      const response = await fetch("/api/configuracion/logo", {
-        method: "POST",
-        body: formData,
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || "Error al subir el logo")
-      }
-
-      // Actualizar la URL del logo
-      setLogoUrl(data.logo_url)
-
-      toast({
-        title: "Logo actualizado",
-        description: "El logo se ha actualizado correctamente.",
-      })
-    } catch (error: any) {
-      console.error("Error al subir logo:", error)
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: error.message || "No se pudo subir el logo.",
-      })
-    } finally {
-      setIsUploading(false)
-    }
-  }
-
-  // Guardar configuración general usando la API
   const handleSaveConfig = async () => {
-    setIsSaving(true)
+    if (!nombreInstitucion.trim()) {
+      toast({
+        title: "Error",
+        description: "El nombre de la institución no puede estar vacío",
+        variant: "destructive",
+      })
+      return
+    }
 
+    setIsSaving(true)
     try {
-      // Enviar a la API
       const response = await fetch("/api/configuracion/general", {
         method: "POST",
         headers: {
@@ -139,111 +78,157 @@ export default function ConfiguracionPage() {
         body: JSON.stringify({ nombre_institucion: nombreInstitucion }),
       })
 
-      const data = await response.json()
-
       if (!response.ok) {
-        throw new Error(data.error || "Error al guardar la configuración")
+        const errorData = await response.json()
+        throw new Error(errorData.error || "Error al guardar la configuración")
       }
 
+      const data = await response.json()
+      setConfiguracion(data)
       toast({
         title: "Configuración guardada",
-        description: "La configuración se ha guardado correctamente.",
+        description: "Los cambios se han guardado correctamente",
       })
     } catch (error: any) {
+      console.error("Error:", error)
       toast({
-        variant: "destructive",
         title: "Error",
-        description: error.message || "No se pudo guardar la configuración.",
+        description: error.message || "No se pudo guardar la configuración",
+        variant: "destructive",
       })
     } finally {
       setIsSaving(false)
     }
   }
 
+  const handleUploadLogo = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    const formData = new FormData(e.currentTarget)
+    const fileInput = e.currentTarget.querySelector('input[type="file"]') as HTMLInputElement
+
+    if (!fileInput.files || fileInput.files.length === 0) {
+      toast({
+        title: "Error",
+        description: "Por favor seleccione un archivo",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setIsUploading(true)
+    try {
+      console.log("Subiendo logo...")
+      const response = await fetch("/api/configuracion/logo", {
+        method: "POST",
+        body: formData,
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || "Error al subir el logo")
+      }
+
+      const data = await response.json()
+      console.log("Logo subido:", data)
+      setConfiguracion((prev) => (prev ? { ...prev, logo_url: data.logo_url } : null))
+      toast({
+        title: "Logo actualizado",
+        description: "El logo se ha actualizado correctamente",
+      })
+
+      // Limpiar el input de archivo
+      fileInput.value = ""
+    } catch (error: any) {
+      console.error("Error al subir logo:", error)
+      toast({
+        title: "Error",
+        description: error.message || "No se pudo subir el logo",
+        variant: "destructive",
+      })
+    } finally {
+      setIsUploading(false)
+    }
+  }
+
   return (
     <MainLayout>
-      <div className="space-y-6">
-        <h1 className="text-3xl font-bold">Configuración</h1>
+      <div className="container mx-auto py-6">
+        <h1 className="text-3xl font-bold mb-6">Configuración del Sistema</h1>
 
         <Tabs defaultValue="general">
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className="mb-4">
             <TabsTrigger value="general">General</TabsTrigger>
             <TabsTrigger value="apariencia">Apariencia</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="general" className="space-y-4 pt-4">
+          <TabsContent value="general">
             <Card>
               <CardHeader>
                 <CardTitle>Configuración General</CardTitle>
-                <CardDescription>Configura los datos generales de la institución.</CardDescription>
+                <CardDescription>Configure los ajustes generales del sistema académico</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="nombre-institucion">Nombre de la Institución</Label>
+                  <Label htmlFor="nombre_institucion">Nombre de la Institución</Label>
                   <Input
-                    id="nombre-institucion"
+                    id="nombre_institucion"
                     value={nombreInstitucion}
                     onChange={(e) => setNombreInstitucion(e.target.value)}
+                    placeholder="Nombre de la institución"
+                    disabled={isLoading}
                   />
                 </div>
-
-                <Button onClick={handleSaveConfig} disabled={isSaving}>
+              </CardContent>
+              <CardFooter>
+                <Button onClick={handleSaveConfig} disabled={isLoading || isSaving}>
                   {isSaving ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       Guardando...
                     </>
                   ) : (
-                    <>
-                      <Save className="mr-2 h-4 w-4" />
-                      Guardar Configuración
-                    </>
+                    "Guardar Configuración"
                   )}
                 </Button>
-              </CardContent>
+              </CardFooter>
             </Card>
           </TabsContent>
 
-          <TabsContent value="apariencia" className="space-y-4 pt-4">
+          <TabsContent value="apariencia">
             <Card>
               <CardHeader>
-                <CardTitle>Logo Institucional</CardTitle>
-                <CardDescription>Sube el logo de la institución para los reportes y documentos.</CardDescription>
+                <CardTitle>Apariencia</CardTitle>
+                <CardDescription>Personalice la apariencia del sistema académico</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                {logoUrl && (
-                  <div className="mb-4 flex justify-center">
-                    <div className="overflow-hidden rounded-md border p-2">
-                      <img
-                        src={logoUrl || "/placeholder.svg"}
-                        alt="Logo institucional"
-                        className="h-32 w-auto object-contain"
-                      />
-                    </div>
-                  </div>
-                )}
-
-                <div className="space-y-2">
-                  <Label htmlFor="logo">Seleccionar Logo</Label>
-                  <Input id="logo" type="file" accept="image/png,image/jpeg,image/jpg" onChange={handleFileChange} />
-                  <p className="text-xs text-muted-foreground">
-                    Formatos permitidos: PNG, JPG, JPEG. Tamaño máximo: 2MB.
-                  </p>
+              <CardContent className="space-y-6">
+                <div className="space-y-4">
+                  <Label>Logo Actual</Label>
+                  <LogoPreview logoUrl={configuracion?.logo_url || null} className="mx-auto" height={150} width={300} />
                 </div>
 
-                <Button onClick={handleUploadLogo} disabled={!logoFile || isUploading}>
-                  {isUploading ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Subiendo...
-                    </>
-                  ) : (
-                    <>
-                      <Upload className="mr-2 h-4 w-4" />
-                      Subir Logo
-                    </>
-                  )}
-                </Button>
+                <form onSubmit={handleUploadLogo} className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="logo">Subir Nuevo Logo</Label>
+                    <Input
+                      id="logo"
+                      name="logo"
+                      type="file"
+                      accept="image/png,image/jpeg,image/jpg"
+                      disabled={isUploading}
+                    />
+                    <p className="text-sm text-gray-500">Formatos permitidos: PNG, JPG, JPEG. Tamaño máximo: 2MB.</p>
+                  </div>
+                  <Button type="submit" disabled={isUploading}>
+                    {isUploading ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Subiendo...
+                      </>
+                    ) : (
+                      "Subir Logo"
+                    )}
+                  </Button>
+                </form>
               </CardContent>
             </Card>
           </TabsContent>

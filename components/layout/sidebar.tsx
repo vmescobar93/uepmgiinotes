@@ -53,6 +53,11 @@ const navItems = [
     href: "/configuracion",
     icon: Settings,
   },
+  {
+    title: "Usuarios",
+    href: "/usuarios",
+    icon: Users,
+  },
 ]
 
 export function Sidebar({ open, onOpenChange }: SidebarProps) {

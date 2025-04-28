@@ -5,11 +5,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Download, Printer, Users } from "lucide-react"
-import { jsPDF } from "jspdf"
-import autoTable from "jspdf-autotable"
 import { useToast } from "@/components/ui/use-toast"
 import { getConfiguracion } from "@/lib/config"
 import { supabase } from "@/lib/supabase"
+import { generarBoletinPDF } from "@/lib/pdf-generators"
+import { getEstadoNota } from "@/lib/utils"
 import type { Database } from "@/types/supabase"
 
 // Tipos
@@ -169,205 +169,17 @@ function BoletinFooter() {
   )
 }
 
-// Función para generar un boletín en PDF para un alumno específico
-export async function generarBoletinPDF(
-  alumno: Alumno,
-  curso: Curso | undefined,
-  materias: Materia[],
-  calificaciones: BoletinNotasProps["calificaciones"],
-  nombreInstitucion: string,
-  logoUrl: string | null,
-  areaMap: Record<string, string>,
-  doc?: jsPDF,
-  addPageBreak = true,
-): Promise<jsPDF> {
-  // Crear un nuevo documento si no se proporciona uno
-  const pdfDoc = doc || new jsPDF({ unit: "mm", format: "a4" })
+// Componente para mostrar una nota con el color correspondiente
+function NotaConEstado({ nota }: { nota: number | null }) {
+  if (nota === null) return <span>-</span>
 
-  // Si estamos añadiendo a un documento existente y se solicita un salto de página
-  if (doc && addPageBreak) {
-    pdfDoc.addPage()
-  }
+  const { color, texto } = getEstadoNota(nota)
 
-  // Funciones para calcular calificaciones
-  const getCalificacion = (materiaId: string, trimestre: 1 | 2 | 3): number | null => {
-    const list =
-      trimestre === 1
-        ? calificaciones.trimestre1
-        : trimestre === 2
-          ? calificaciones.trimestre2
-          : calificaciones.trimestre3
-
-    const cal = list.find((c) => c.alumno_id === alumno.cod_moodle && c.materia_id === materiaId)
-    return cal?.nota ?? null
-  }
-
-  const calcularPromedioMateria = (materiaId: string): number => {
-    const notas = [1, 2, 3]
-      .map((t) => getCalificacion(materiaId, t as 1 | 2 | 3))
-      .filter((n): n is number => n !== null)
-
-    if (!notas.length) return 0
-    return Math.round((notas.reduce((s, n) => s + n, 0) / notas.length) * 100) / 100
-  }
-
-  const calcularPromedioTrimestre = (tr: 1 | 2 | 3): number => {
-    const notas = materias.map((m) => getCalificacion(m.codigo, tr)).filter((n): n is number => n !== null)
-    if (!notas.length) return 0
-    return Math.round((notas.reduce((s, n) => s + n, 0) / notas.length) * 100) / 100
-  }
-
-  const calcularPromedioAnual = (): number => {
-    const proms = [1, 2, 3].map((t) => calcularPromedioTrimestre(t as 1 | 2 | 3)).filter((p) => p > 0)
-    if (!proms.length) return 0
-    return Math.round((proms.reduce((s, p) => s + p, 0) / proms.length) * 100) / 100
-  }
-
-  // Agrupar materias por área
-  const materiasConArea: MateriaConArea[] = materias.map((m) => ({
-    ...m,
-    areaNombre: m.id_area && areaMap[m.id_area] ? areaMap[m.id_area] : "Sin área",
-  }))
-
-  // Ordenar por área y luego por orden
-  const ordenadas = [...materiasConArea].sort((a, b) => {
-    const areaA = a.areaNombre || "Sin área"
-    const areaB = b.areaNombre || "Sin área"
-
-    if (areaA !== areaB) {
-      return areaA.localeCompare(areaB)
-    }
-    return (a.orden ?? 0) - (b.orden ?? 0)
-  })
-
-  // Agrupar por área
-  const materiasAgrupadas: MateriasAgrupadas = {}
-  ordenadas.forEach((materia) => {
-    const areaId = materia.id_area || "sin-area"
-    if (!materiasAgrupadas[areaId]) {
-      materiasAgrupadas[areaId] = {
-        areaNombre: materia.areaNombre || "Sin área",
-        materias: [],
-      }
-    }
-    materiasAgrupadas[areaId].materias.push(materia)
-  })
-
-  // Añadir logo si existe
-  if (logoUrl) {
-    try {
-      const img = new Image()
-      img.crossOrigin = "anonymous"
-
-      await new Promise((resolve, reject) => {
-        img.onload = resolve
-        img.onerror = reject
-        img.src = logoUrl
-      })
-
-      // Calcular dimensiones para mantener proporción
-      const imgWidth = 25
-      const imgHeight = (img.height * imgWidth) / img.width
-
-      pdfDoc.addImage(img, "JPEG", 15, 10, imgWidth, imgHeight)
-    } catch (error) {
-      console.error("Error al cargar el logo:", error)
-    }
-  }
-
-  // Título y encabezado
-  pdfDoc.setFontSize(16)
-  pdfDoc.text("Boletín de Calificaciones", 105, 15, { align: "center" })
-  pdfDoc.setFontSize(14)
-  pdfDoc.text(nombreInstitucion, 105, 22, { align: "center" })
-
-  // Información del alumno y curso
-  pdfDoc.setFontSize(12)
-  pdfDoc.text(`Alumno: ${alumno.apellidos}, ${alumno.nombres}`, 15, 35)
-  pdfDoc.text(`Curso: ${curso?.nombre_largo || ""}`, 15, 40)
-  pdfDoc.text(`Fecha: ${new Date().toLocaleDateString()}`, 15, 45)
-
-  // Preparar datos para la tabla
-  const head = [["Área", "Materia", "1er Trimestre", "2do Trimestre", "3er Trimestre", "Promedio Anual"]]
-  const body = []
-
-  // Datos de materias agrupados por área
-  Object.values(materiasAgrupadas).forEach((grupo) => {
-    let primeraFila = true
-
-    grupo.materias.forEach((materia) => {
-      const nota1 = getCalificacion(materia.codigo, 1)
-      const nota2 = getCalificacion(materia.codigo, 2)
-      const nota3 = getCalificacion(materia.codigo, 3)
-      const promedio = calcularPromedioMateria(materia.codigo)
-
-      body.push([
-        primeraFila ? grupo.areaNombre : "",
-        materia.nombre_largo,
-        nota1 !== null ? nota1.toFixed(2) : "-",
-        nota2 !== null ? nota2.toFixed(2) : "-",
-        nota3 !== null ? nota3.toFixed(2) : "-",
-        promedio.toFixed(2),
-      ])
-
-      primeraFila = false
-    })
-  })
-
-  // Agregar promedio general
-  body.push([
-    "PROMEDIO GENERAL",
-    "",
-    calcularPromedioTrimestre(1).toFixed(2),
-    calcularPromedioTrimestre(2).toFixed(2),
-    calcularPromedioTrimestre(3).toFixed(2),
-    calcularPromedioAnual().toFixed(2),
-  ])
-
-  // Generar tabla
-  autoTable(pdfDoc, {
-    startY: 50,
-    head: head,
-    body: body,
-    theme: "grid",
-    headStyles: {
-      fillColor: [100, 100, 100],
-      textColor: [255, 255, 255],
-      fontStyle: "bold",
-      halign: "center",
-    },
-    columnStyles: {
-      0: { cellWidth: 35 },
-      1: { cellWidth: 50 },
-      2: { halign: "center" },
-      3: { halign: "center" },
-      4: { halign: "center" },
-      5: { halign: "center", fontStyle: "bold" },
-    },
-    styles: {
-      fontSize: 9,
-      cellPadding: 3,
-    },
-    didParseCell: (data) => {
-      // Estilo para la fila de promedio general
-      if (data.row.index === body.length - 1) {
-        data.cell.styles.fontStyle = "bold"
-        data.cell.styles.fillColor = [220, 220, 220]
-      }
-    },
-  })
-
-  // Pie de página con firmas
-  const pageHeight = pdfDoc.internal.pageSize.getHeight()
-  pdfDoc.setLineWidth(0.5)
-  pdfDoc.line(40, pageHeight - 40, 80, pageHeight - 40) // Línea para firma del director
-  pdfDoc.line(120, pageHeight - 40, 160, pageHeight - 40) // Línea para firma del padre/apoderado
-
-  pdfDoc.setFontSize(10)
-  pdfDoc.text("Director/a", 60, pageHeight - 35, { align: "center" })
-  pdfDoc.text("Padre o Apoderado", 140, pageHeight - 35, { align: "center" })
-
-  return pdfDoc
+  return (
+    <span style={{ color }} title={texto}>
+      {nota.toFixed(2)}
+    </span>
+  )
 }
 
 // Componente principal
@@ -450,15 +262,20 @@ export function BoletinNotas({ alumno, curso, materias, calificaciones, alumnos 
     setIsExportingAll(true)
 
     try {
-      // Crear un nuevo documento PDF
-      let doc = new jsPDF({ unit: "mm", format: "a4" })
+      const doc = await generarBoletinPDF(
+        alumnos[0],
+        curso,
+        materias,
+        calificaciones,
+        nombreInstitucion,
+        logoUrl,
+        areaMap,
+      )
 
-      // Generar boletín para cada alumno
-      for (let i = 0; i < alumnos.length; i++) {
-        const alumnoActual = alumnos[i]
-        // No añadir salto de página para el primer alumno
-        doc = await generarBoletinPDF(
-          alumnoActual,
+      // Generar boletín para el resto de alumnos
+      for (let i = 1; i < alumnos.length; i++) {
+        await generarBoletinPDF(
+          alumnos[i],
           curso,
           materias,
           calificaciones,
@@ -466,7 +283,7 @@ export function BoletinNotas({ alumno, curso, materias, calificaciones, alumnos 
           logoUrl,
           areaMap,
           doc,
-          i > 0, // Añadir salto de página excepto para el primer alumno
+          true, // Añadir salto de página
         )
       }
 
@@ -572,10 +389,18 @@ export function BoletinNotas({ alumno, curso, materias, calificaciones, alumnos 
                               </TableCell>
                             )}
                             <TableCell>{materia.nombre_largo}</TableCell>
-                            <TableCell className="text-center">{nota1 !== null ? nota1.toFixed(2) : "-"}</TableCell>
-                            <TableCell className="text-center">{nota2 !== null ? nota2.toFixed(2) : "-"}</TableCell>
-                            <TableCell className="text-center">{nota3 !== null ? nota3.toFixed(2) : "-"}</TableCell>
-                            <TableCell className="text-center font-medium">{promedio.toFixed(2)}</TableCell>
+                            <TableCell className="text-center">
+                              <NotaConEstado nota={nota1} />
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <NotaConEstado nota={nota2} />
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <NotaConEstado nota={nota3} />
+                            </TableCell>
+                            <TableCell className="text-center font-medium">
+                              <NotaConEstado nota={promedio} />
+                            </TableCell>
                           </TableRow>
                         )
                       })}
@@ -587,10 +412,18 @@ export function BoletinNotas({ alumno, curso, materias, calificaciones, alumnos 
                     <TableCell colSpan={2} className="font-bold">
                       PROMEDIO GENERAL
                     </TableCell>
-                    <TableCell className="text-center font-bold">{calcularPromedioTrimestre(1).toFixed(2)}</TableCell>
-                    <TableCell className="text-center font-bold">{calcularPromedioTrimestre(2).toFixed(2)}</TableCell>
-                    <TableCell className="text-center font-bold">{calcularPromedioTrimestre(3).toFixed(2)}</TableCell>
-                    <TableCell className="text-center font-bold">{calcularPromedioAnual().toFixed(2)}</TableCell>
+                    <TableCell className="text-center font-bold">
+                      <NotaConEstado nota={calcularPromedioTrimestre(1)} />
+                    </TableCell>
+                    <TableCell className="text-center font-bold">
+                      <NotaConEstado nota={calcularPromedioTrimestre(2)} />
+                    </TableCell>
+                    <TableCell className="text-center font-bold">
+                      <NotaConEstado nota={calcularPromedioTrimestre(3)} />
+                    </TableCell>
+                    <TableCell className="text-center font-bold">
+                      <NotaConEstado nota={calcularPromedioAnual()} />
+                    </TableCell>
                   </TableRow>
                 </>
               )}
@@ -600,6 +433,25 @@ export function BoletinNotas({ alumno, curso, materias, calificaciones, alumnos 
 
         {/* Pie de página para impresión */}
         <BoletinFooter />
+
+        {/* Leyenda de colores */}
+        <div className="mt-6 text-sm print:mt-4">
+          <h3 className="font-semibold mb-2">Leyenda:</h3>
+          <ul className="space-y-1">
+            <li>
+              <span className="inline-block w-4 h-4 bg-red-500 mr-2"></span>
+              <span style={{ color: "red" }}>0-49,00:</span> Reprobado
+            </li>
+            <li>
+              <span className="inline-block w-4 h-4 bg-amber-500 mr-2"></span>
+              <span style={{ color: "#f59e0b" }}>49,01-50,99:</span> No Concluyente
+            </li>
+            <li>
+              <span className="inline-block w-4 h-4 bg-green-500 mr-2"></span>
+              <span>51,00-100,00:</span> Aprobado
+            </li>
+          </ul>
+        </div>
       </CardContent>
     </Card>
   )

@@ -1,4 +1,4 @@
-import { supabase, createServerSupabaseClient } from "@/lib/supabase"
+import { createServerSupabaseClient } from "@/lib/supabase"
 
 export interface ConfiguracionSistema {
   id: number
@@ -8,26 +8,41 @@ export interface ConfiguracionSistema {
 
 export async function getConfiguracion(): Promise<ConfiguracionSistema> {
   try {
-    // Usar el cliente normal para lectura
-    const { data } = await supabase.from("configuracion").select("*").single()
+    // Crear cliente de Supabase con rol de servicio para asegurar acceso
+    const supabaseAdmin = createServerSupabaseClient()
 
-    if (data) {
+    // Intentar obtener la configuración
+    const { data, error } = await supabaseAdmin.from("configuracion").select("*").eq("id", 1).single()
+
+    if (data && !error) {
       return data as ConfiguracionSistema
     }
 
-    // Si no hay datos, intentar crear la configuración inicial con el cliente admin
-    const supabaseAdmin = createServerSupabaseClient()
-    await supabaseAdmin.from("configuracion").upsert({
-      id: 1,
-      nombre_institucion: "U.E. Plena María Goretti II",
-      logo_url: null,
-    })
-
-    return {
+    // Si no hay datos, crear la configuración inicial
+    const defaultConfig: ConfiguracionSistema = {
       id: 1,
       nombre_institucion: "U.E. Plena María Goretti II",
       logo_url: null,
     }
+
+    try {
+      // Usar la función RPC para insertar la configuración
+      await supabaseAdmin.rpc("insert_configuracion", {
+        nombre_param: defaultConfig.nombre_institucion,
+        logo_url_param: defaultConfig.logo_url,
+      })
+    } catch (rpcError) {
+      console.error("Error al usar RPC para insertar configuración:", rpcError)
+
+      // Intentar con el método normal como fallback
+      try {
+        await supabaseAdmin.from("configuracion").insert(defaultConfig)
+      } catch (fallbackError) {
+        console.error("Error en fallback:", fallbackError)
+      }
+    }
+
+    return defaultConfig
   } catch (error) {
     console.error("Error al obtener configuración:", error)
     return {

@@ -226,7 +226,7 @@ export function RankingAlumnos({
         body,
         startY: 45,
         theme: "grid",
-        headStyles: { fillColor: [100, 100, 100], fontSize: 10, halign: "center" },
+        headStyles: { fillColor: [245, 166, 10], fontSize: 10, halign: "center" },
         bodyStyles: { fontSize: 9 },
         columnStyles: {
           0: { halign: "center", cellWidth: 15 },

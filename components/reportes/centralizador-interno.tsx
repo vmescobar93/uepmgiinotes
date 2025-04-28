@@ -5,10 +5,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Download, Printer } from "lucide-react"
-import { jsPDF } from "jspdf"
-import autoTable from "jspdf-autotable"
 import { useToast } from "@/components/ui/use-toast"
 import { getConfiguracion } from "@/lib/config"
+import { generarCentralizadorInternoPDF } from "@/lib/pdf-generators"
+import { getEstadoNota } from "@/lib/utils"
 import type { Database } from "@/types/supabase"
 
 type Curso = Database["public"]["Tables"]["cursos"]["Row"]
@@ -22,6 +22,19 @@ interface CentralizadorInternoProps {
   materias: Materia[]
   calificaciones: Calificacion[]
   trimestre: string
+}
+
+// Componente para mostrar una nota con el color correspondiente
+function NotaConEstado({ nota }: { nota: number | null }) {
+  if (nota === null) return <span>-</span>
+
+  const { color, texto } = getEstadoNota(nota)
+
+  return (
+    <span style={{ color }} title={texto}>
+      {nota.toFixed(2)}
+    </span>
+  )
 }
 
 export function CentralizadorInterno({
@@ -83,98 +96,15 @@ export function CentralizadorInterno({
     setIsExporting(true)
 
     try {
-      const doc = new jsPDF({
-        orientation: "landscape",
-        unit: "mm",
-        format: "a4",
-      })
-
-      // Añadir logo si existe
-      if (logoUrl) {
-        try {
-          const img = new Image()
-          img.crossOrigin = "anonymous"
-
-          await new Promise((resolve, reject) => {
-            img.onload = resolve
-            img.onerror = reject
-            img.src = logoUrl
-          })
-
-          // Calcular dimensiones para mantener proporción
-          const imgWidth = 25
-          const imgHeight = (img.height * imgWidth) / img.width
-
-          doc.addImage(img, "JPEG", 15, 10, imgWidth, imgHeight)
-        } catch (error) {
-          console.error("Error al cargar el logo:", error)
-        }
-      }
-
-      // Título
-      const trimestreTexto = trimestre === "1" ? "Primer" : trimestre === "2" ? "Segundo" : "Tercer"
-      doc.setFontSize(16)
-      doc.text(`Centralizador de Calificaciones - ${trimestreTexto} Trimestre`, 150, 15, { align: "center" })
-
-      // Nombre de la institución
-      doc.setFontSize(14)
-      doc.text(nombreInstitucion, 150, 22, { align: "center" })
-
-      // Información del curso
-      doc.setFontSize(12)
-      doc.text(`Curso: ${curso?.nombre_largo || ""}`, 15, 35)
-      doc.text(`Fecha: ${new Date().toLocaleDateString()}`, 15, 40)
-
-      // Preparar datos para la tabla
-      const head = [
-        ["#", "Código", "Apellidos", "Nombres", ...materiasOrdenadas.map((m) => m.nombre_corto), "Promedio"],
-      ]
-
-      const body = alumnos.map((alumno, index) => {
-        const notas = materiasOrdenadas.map((materia) => {
-          const nota = getCalificacion(alumno.cod_moodle, materia.codigo)
-          return nota !== null ? nota.toFixed(2) : "-"
-        })
-
-        const promedio = calcularPromedio(alumno.cod_moodle)
-
-        return [
-          (index + 1).toString(),
-          alumno.cod_moodle,
-          alumno.apellidos,
-          alumno.nombres,
-          ...notas,
-          promedio.toFixed(2),
-        ]
-      })
-
-      // Generar tabla
-      autoTable(doc, {
-        head,
-        body,
-        startY: 45,
-        theme: "grid",
-        headStyles: { fillColor: [100, 100, 100], fontSize: 8, halign: "center" },
-        bodyStyles: { fontSize: 8 },
-        columnStyles: {
-          0: { halign: "center", cellWidth: 8 },
-          1: { cellWidth: 15 },
-          [4 + materiasOrdenadas.length]: { halign: "center", fontStyle: "bold" },
-        },
-      })
-
-      // Pie de página
-      const pageCount = doc.getNumberOfPages()
-      for (let i = 1; i <= pageCount; i++) {
-        doc.setPage(i)
-        doc.setFontSize(8)
-        doc.text(
-          `Página ${i} de ${pageCount} - ${nombreInstitucion}`,
-          doc.internal.pageSize.getWidth() / 2,
-          doc.internal.pageSize.getHeight() - 10,
-          { align: "center" },
-        )
-      }
+      const doc = await generarCentralizadorInternoPDF(
+        curso,
+        alumnos,
+        materias,
+        calificaciones,
+        trimestre,
+        nombreInstitucion,
+        logoUrl,
+      )
 
       // Guardar PDF
       doc.save(`Centralizador_${curso?.nombre_corto || "Curso"}_T${trimestre}.pdf`)
@@ -272,18 +202,37 @@ export function CentralizadorInterno({
                       const nota = getCalificacion(alumno.cod_moodle, materia.codigo)
                       return (
                         <TableCell key={materia.codigo} className="text-center">
-                          {nota !== null ? nota.toFixed(2) : "-"}
+                          <NotaConEstado nota={nota} />
                         </TableCell>
                       )
                     })}
                     <TableCell className="text-center font-bold">
-                      {calcularPromedio(alumno.cod_moodle).toFixed(2)}
+                      <NotaConEstado nota={calcularPromedio(alumno.cod_moodle)} />
                     </TableCell>
                   </TableRow>
                 ))
               )}
             </TableBody>
           </Table>
+        </div>
+
+        {/* Leyenda de colores */}
+        <div className="mt-6 text-sm print:mt-4">
+          <h3 className="font-semibold mb-2">Leyenda:</h3>
+          <ul className="space-y-1">
+            <li>
+              <span className="inline-block w-4 h-4 bg-red-500 mr-2"></span>
+              <span style={{ color: "red" }}>0-49,00:</span> Reprobado
+            </li>
+            <li>
+              <span className="inline-block w-4 h-4 bg-amber-500 mr-2"></span>
+              <span style={{ color: "#f59e0b" }}>49,01-50,99:</span> No Concluyente
+            </li>
+            <li>
+              <span className="inline-block w-4 h-4 bg-green-500 mr-2"></span>
+              <span>51,00-100,00:</span> Aprobado
+            </li>
+          </ul>
         </div>
       </CardContent>
     </Card>
