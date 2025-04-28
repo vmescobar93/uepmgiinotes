@@ -31,7 +31,18 @@ export async function generarBoletinPDF(
   addPageBreak = true,
 ): Promise<jsPDF> {
   // Crear un nuevo documento si no se proporciona uno
-  const pdfDoc = doc || new jsPDF({ unit: "mm", format: "letter" })
+  const pdfDoc =
+    doc ||
+    new jsPDF({
+      unit: "mm",
+      format: "letter",
+      putOnlyUsedFonts: true,
+      compress: true,
+    })
+
+  // Configurar fuentes para soportar caracteres especiales
+  pdfDoc.setFont("helvetica", "normal")
+  pdfDoc.setLanguage("es-MX")
 
   // Si estamos añadiendo a un documento existente y se solicita un salto de página
   if (doc && addPageBreak) {
@@ -137,9 +148,9 @@ export async function generarBoletinPDF(
   pdfDoc.setFontSize(14)
   pdfDoc.text("1er Trimestre", 120, 19, { align: "center" })
   pdfDoc.setFontSize(12)
-  pdfDoc.text(`${new Date().toLocaleDateString('es-ES')}`, 120, 25, { align: "center" })
+  pdfDoc.text(`${new Date().toLocaleDateString("es-ES")}`, 120, 25, { align: "center" })
 
-// Agregar leyenda de colores
+  // Agregar leyenda de colores
   pdfDoc.setFontSize(9)
   pdfDoc.text("Escala de Rendimiento:", 202, 13, { align: "right" })
   pdfDoc.setTextColor(255, 0, 0)
@@ -148,15 +159,14 @@ export async function generarBoletinPDF(
   pdfDoc.text("Satisfactorio: 51 - 79", 202, 21, { align: "right" })
   pdfDoc.setTextColor(0, 0, 0)
   pdfDoc.text("Óptimo: 80 - 100", 202, 25, { align: "right" })
- 
+
   // Información del alumno y curso
   pdfDoc.setFontSize(11)
   pdfDoc.text(`Alumno:`, 15, 35, { fontStyle: "bold" })
   pdfDoc.text(`${alumno.apellidos}, ${alumno.nombres}`, 35, 35)
-  pdfDoc.text(`Curso:`, 15, 40, {fontStyle: "bold" })
+  pdfDoc.text(`Curso:`, 15, 40, { fontStyle: "bold" })
   pdfDoc.text(`${curso?.nombre_largo || ""}`, 35, 40)
-  
- 
+
   // Pie de página con firmas
   const pageHeight = pdfDoc.internal.pageSize.getHeight()
   pdfDoc.setLineWidth(0.5)
@@ -221,7 +231,7 @@ export async function generarBoletinPDF(
       halign: "center",
     },
     columnStyles: {
-      0: { cellWidth: 35, valign: "middle", fontStyle: "bold"  },
+      0: { cellWidth: 35, valign: "middle", fontStyle: "bold" },
       1: { cellWidth: 55, valign: "middle" },
       2: { halign: "center" },
       3: { halign: "center" },
@@ -244,8 +254,10 @@ export async function generarBoletinPDF(
         const valor = data.cell.text[0]
         if (valor !== "-") {
           const nota = Number.parseFloat(valor)
-          const estilos = getEstiloNotaPDF(nota, data.cell.styles)
-          Object.assign(data.cell.styles, estilos)
+          if (!isNaN(nota)) {
+            const estilos = getEstiloNotaPDF(nota, data.cell.styles)
+            Object.assign(data.cell.styles, estilos)
+          }
         }
       }
     },
@@ -289,9 +301,7 @@ export async function generarTodosBoletinesPDF(
   return doc
 }
 
-/**
- * Genera un PDF del centralizador interno
- */
+// Modificar la función generarCentralizadorInternoPDF para establecer la configuración de fuente
 export async function generarCentralizadorInternoPDF(
   curso: Curso | undefined,
   alumnos: Alumno[],
@@ -304,8 +314,14 @@ export async function generarCentralizadorInternoPDF(
   const doc = new jsPDF({
     orientation: "landscape",
     unit: "mm",
-    format: "letter",
+    format: [216, 330],
+    putOnlyUsedFonts: true,
+    compress: true,
   })
+
+  // Configurar fuentes para soportar caracteres especiales
+  doc.setFont("helvetica", "normal")
+  doc.setLanguage("es-MX")
 
   // Añadir logo si existe
   if (logoUrl) {
@@ -332,16 +348,14 @@ export async function generarCentralizadorInternoPDF(
   // Título
   const trimestreTexto = trimestre === "1" ? "1er" : trimestre === "2" ? "2do" : "3er"
   doc.setFontSize(16)
-  doc.text(`Centralizador de Calificaciones`, 150, 15, { align: "center" })
+  doc.text(`Centralizador de Calificaciones`, 180, 15, { align: "center" })
   doc.setFontSize(14)
-  doc.text(`${trimestreTexto} Trimestre`, 150, 22, { align: "center" })
-  // Nombre de la institución
-  doc.text(nombreInstitucion, 150, 29, { align: "center" })
+  doc.text(`${trimestreTexto} Trimestre`, 180, 22, { align: "center" })
 
   // Información del curso
   doc.setFontSize(12)
   doc.text(`Curso: ${curso?.nombre_largo || ""}`, 15, 35)
-  doc.text(`Fecha: ${new Date().toLocaleDateString('es-ES')}`, 15, 40)
+  doc.text(`Fecha: ${new Date().toLocaleDateString("es-ES")}`, 15, 40)
 
   // Ordenar materias por el campo "orden"
   const materiasOrdenadas = [...materias].sort((a, b) => {
@@ -370,6 +384,18 @@ export async function generarCentralizadorInternoPDF(
     return Math.round((suma / notasAlumno.length) * 100) / 100
   }
 
+  // Calcular promedios para todos los alumnos
+  const promediosAlumnos = alumnos.map((alumno) => ({
+    alumnoId: alumno.cod_moodle,
+    promedio: calcularPromedio(alumno.cod_moodle),
+  }))
+
+  // Ordenar promedios de mayor a menor
+  const promediosOrdenados = [...promediosAlumnos].sort((a, b) => b.promedio - a.promedio)
+
+  // Obtener los IDs de los 3 mejores promedios
+  const mejoresPromediosIds = promediosOrdenados.slice(0, 3).map((p) => p.alumnoId)
+
   // Preparar datos para la tabla
   const head = [["#", "Apellidos", "Nombres", ...materiasOrdenadas.map((m) => m.nombre_corto), "Promedio"]]
 
@@ -390,28 +416,59 @@ export async function generarCentralizadorInternoPDF(
     body,
     startY: 45,
     theme: "grid",
-    headStyles: { fillColor: [245, 166, 10], fontSize: 8, halign: "center" },
-    bodyStyles: { fontSize: 8 },
+    headStyles: { fillColor: [245, 166, 10], fontSize: 9, halign: "center" },
+    bodyStyles: { fontSize: 8, font: "helvetica" },
     columnStyles: {
-      0: { halign: "center", cellWidth: 8 },
-      [3 + materiasOrdenadas.length]: { halign: "center", fontStyle: "bold" },
+      0: { halign: "center", cellWidth: 10 },
     },
     didParseCell: (data) => {
-      // Aplicar colores según el estado de la nota
-      if (data.column.index >= 3 && data.column.index < 3 + materiasOrdenadas.length && data.section === "body") {
-        const valor = data.cell.text[0]
-        if (valor !== "-") {
-          const nota = Number.parseFloat(valor)
-          const estilos = getEstiloNotaPDF(nota, data.cell.styles)
-          Object.assign(data.cell.styles, estilos)
+      // Centrar todas las columnas de materias
+      if (data.column.index >= 3 && data.section === "body") {
+        data.cell.styles.halign = "center"
+      }
+
+      // Destacar los tres mejores promedios
+      if (data.section === "body") {
+        const alumnoActual = alumnos[data.row.index]
+        if (alumnoActual && mejoresPromediosIds.includes(alumnoActual.cod_moodle)) {
+          // Determinar la posición en el ranking
+          const posicion = mejoresPromediosIds.indexOf(alumnoActual.cod_moodle) + 1
+
+          // Aplicar estilos según la posición
+          data.cell.styles.fontStyle = "bold"
+
+          if (data.column.index === 0) {
+            // Solo mostrar el indicador en la columna de número
+            if (posicion === 1) {
+              data.cell.styles.fillColor = [255, 223, 0] // Oro (amarillo)
+            } else if (posicion === 2) {
+              data.cell.styles.fillColor = [192, 192, 192] // Plata (gris)
+            } else if (posicion === 3) {
+              data.cell.styles.fillColor = [205, 127, 50] // Bronce (marrón)
+            }
+          } else {
+            // Para el resto de columnas, solo aplicar un color de fondo más sutil
+            if (posicion === 1) {
+              data.cell.styles.fillColor = [255, 240, 180] // Oro claro
+            } else if (posicion === 2) {
+              data.cell.styles.fillColor = [220, 220, 220] // Plata claro
+            } else if (posicion === 3) {
+              data.cell.styles.fillColor = [235, 200, 175] // Bronce claro
+            }
+          }
         }
       }
 
-      // Aplicar color al promedio
-      if (data.column.index === 3 + materiasOrdenadas.length && data.section === "body") {
-        const promedio = Number.parseFloat(data.cell.text[0])
-        const estilos = getEstiloNotaPDF(promedio, data.cell.styles)
-        Object.assign(data.cell.styles, estilos)
+      // Aplicar colores según el estado de la nota
+      if (data.column.index >= 3 && data.section === "body") {
+        const valor = data.cell.text[0]
+        if (valor !== "-") {
+          const nota = Number.parseFloat(valor)
+          if (!isNaN(nota)) {
+            const estilos = getEstiloNotaPDF(nota, data.cell.styles)
+            Object.assign(data.cell.styles, estilos)
+          }
+        }
       }
     },
   })
@@ -447,9 +504,7 @@ export async function generarCentralizadorInternoPDF(
   return doc
 }
 
-/**
- * Genera un PDF del centralizador MINEDU
- */
+// Modificar la función generarCentralizadorMineduPDF para establecer la configuración de fuente
 export async function generarCentralizadorMineduPDF(
   curso: Curso | undefined,
   alumnos: Alumno[],
@@ -464,8 +519,15 @@ export async function generarCentralizadorMineduPDF(
     orientation: "landscape",
     unit: "mm",
     format: "letter",
+    putOnlyUsedFonts: true,
+    compress: true,
   })
 
+  // Configurar fuentes para soportar caracteres especiales
+  doc.setFont("helvetica", "normal")
+  doc.setLanguage("es-MX")
+
+  // El resto de la función permanece igual...
   // Añadir logo si existe
   if (logoUrl) {
     try {
@@ -499,9 +561,9 @@ export async function generarCentralizadorMineduPDF(
   //doc.text(nombreInstitucion, 150, 22, { align: "center" })
 
   // Información del curso
-  doc.setFontSize(10)
+  doc.setFontSize(12)
   doc.text(`Curso: ${curso?.nombre_largo || ""}`, 15, 35)
-  doc.text(`Fecha: ${new Date().toLocaleDateString('es-ES')}`, 15, 40)
+  doc.text(`Fecha: ${new Date().toLocaleDateString("es-ES")}`, 15, 40)
 
   // Procesar materias y agrupaciones
   interface MateriaAgrupada {
@@ -656,20 +718,27 @@ export async function generarCentralizadorMineduPDF(
     body,
     startY: 45,
     theme: "grid",
-    headStyles: { fillColor: [245, 166, 10], fontSize: 8, halign: "center" },
+    headStyles: { fillColor: [245, 166, 10], fontSize: 10, halign: "center" },
     bodyStyles: { fontSize: 8 },
     columnStyles: {
       0: { halign: "center", cellWidth: 8 },
       //1: { cellWidth: 15 },
     },
     didParseCell: (data) => {
+      // Centrar todas las columnas de materias
+      if (data.column.index >= 3 && data.section === "body") {
+        data.cell.styles.halign = "center"
+      }
+
       // Aplicar colores según el estado de la nota
-      if (data.column.index >= 4 && data.section === "body") {
+      if (data.column.index >= 3 && data.section === "body") {
         const valor = data.cell.text[0]
         if (valor !== "-") {
           const nota = Number.parseFloat(valor)
-          const estilos = getEstiloNotaPDF(nota, data.cell.styles)
-          Object.assign(data.cell.styles, estilos)
+          if (!isNaN(nota)) {
+            const estilos = getEstiloNotaPDF(nota, data.cell.styles)
+            Object.assign(data.cell.styles, estilos)
+          }
         }
       }
     },

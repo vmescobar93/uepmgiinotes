@@ -3,7 +3,17 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
-import { LayoutDashboard, Users, GraduationCap, BookOpen, ClipboardList, FileText, Settings, X } from "lucide-react"
+import {
+  LayoutDashboard,
+  Users,
+  GraduationCap,
+  BookOpen,
+  ClipboardList,
+  FileText,
+  Settings,
+  X,
+  Database,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 
@@ -52,6 +62,11 @@ const navItems = [
     title: "Configuración",
     href: "/configuracion",
     icon: Settings,
+  },
+  {
+    title: "Datos de Prueba",
+    href: "/admin/test-data",
+    icon: Database,
   },
   {
     title: "Usuarios",

@@ -157,7 +157,13 @@ export function RankingAlumnos({
         orientation: "portrait",
         unit: "mm",
         format: "a4",
+        putOnlyUsedFonts: true,
+        compress: true,
       })
+
+      // Configurar fuentes para soportar caracteres especiales
+      doc.setFont("helvetica", "normal")
+      doc.setLanguage("es-MX")
 
       // Añadir logo si existe
       if (logoUrl) {
@@ -227,7 +233,7 @@ export function RankingAlumnos({
         startY: 45,
         theme: "grid",
         headStyles: { fillColor: [245, 166, 10], fontSize: 10, halign: "center" },
-        bodyStyles: { fontSize: 9 },
+        bodyStyles: { fontSize: 9, font: "helvetica" },
         columnStyles: {
           0: { halign: "center", cellWidth: 15 },
           5: { halign: "center", fontStyle: "bold" },

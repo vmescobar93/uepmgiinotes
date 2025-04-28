@@ -9,6 +9,7 @@ import { useToast } from "@/components/ui/use-toast"
 import type { Database } from "@/types/supabase"
 import { supabase } from "@/lib/supabase"
 import { useAuth } from "@/context/auth-context"
+import { getEstiloNotaPDF } from "@/lib/utils"
 
 // Eliminar las importaciones de Dialog que ya no necesitamos
 // import {
@@ -167,14 +168,31 @@ export function PdfGenerator({
         body,
         startY: 48,
         theme: "grid",
-        headStyles: { fillColor: [245, 166, 10], fontSize: 8 },
+        headStyles: { halign: "center", fillColor: [245, 166, 10], fontSize: 8 },
         styles: {
-          fontSize: 8,
+          fontSize: 9,
           cellPadding: 1,
           lineHeight: 1,
           font: "helvetica",
         },
+        columnStyles: {
+          0: { halign: "center" },
+          3: { halign: "center" },
+        },
         margin: { left: 14, right: 14 },
+        didParseCell: (data) => {
+          // Aplicar colores según el estado de la nota
+          if (data.column.index === 3 && data.section === "body") {
+            const valor = data.cell.text[0]
+            if (valor !== "" && valor !== "-") {
+              const nota = Number.parseFloat(valor)
+              if (!isNaN(nota)) {
+                const estilos = getEstiloNotaPDF(nota, data.cell.styles)
+                Object.assign(data.cell.styles, estilos)
+              }
+            }
+          }
+        },
       })
 
       // Pie de firmas y fecha/hora de impresión (centrado)
