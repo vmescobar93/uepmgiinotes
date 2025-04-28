@@ -1,20 +1,34 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import React, { useState, useEffect, useRef, useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Download, Printer } from "lucide-react"
+import { Download, Printer, Users } from "lucide-react"
 import { jsPDF } from "jspdf"
 import autoTable from "jspdf-autotable"
 import { useToast } from "@/components/ui/use-toast"
 import { getConfiguracion } from "@/lib/config"
+import { supabase } from "@/lib/supabase"
 import type { Database } from "@/types/supabase"
 
-type Curso = Database["public"]["Tables"]["cursos"]["Row"]
+// Tipos
 type Alumno = Database["public"]["Tables"]["alumnos"]["Row"]
-type Materia = Database["public"]["Tables"]["materias"]["Row"]
+type Curso = Database["public"]["Tables"]["cursos"]["Row"]
+type Materia = Database["public"]["Tables"]["materias"]["Row"] & { orden?: number }
+type Area = Database["public"]["Tables"]["areas"]["Row"]
 type Calificacion = Database["public"]["Tables"]["calificaciones"]["Row"]
+
+interface MateriaConArea extends Materia {
+  areaNombre?: string
+}
+
+interface MateriasAgrupadas {
+  [areaId: string]: {
+    areaNombre: string
+    materias: MateriaConArea[]
+  }
+}
 
 interface BoletinNotasProps {
   alumno?: Alumno
@@ -25,239 +39,460 @@ interface BoletinNotasProps {
     trimestre2: Calificacion[]
     trimestre3: Calificacion[]
   }
+  alumnos?: Alumno[] // Lista completa de alumnos para generar todos los boletines
 }
 
-export function BoletinNotas({ alumno, curso, materias, calificaciones }: BoletinNotasProps) {
-  const { toast } = useToast()
-  const boletinRef = useRef<HTMLDivElement>(null)
-  const [isExporting, setIsExporting] = useState(false)
+// Hook personalizado para cargar configuración y áreas
+function useConfiguracionYAreas() {
   const [nombreInstitucion, setNombreInstitucion] = useState("U.E. Plena María Goretti II")
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
+  const [areas, setAreas] = useState<Area[]>([])
 
-  // Cargar configuración
   useEffect(() => {
-    const loadConfig = async () => {
-      const config = await getConfiguracion()
-      setNombreInstitucion(config.nombre_institucion)
-      setLogoUrl(config.logo_url)
-    }
-    loadConfig()
+    // Cargar configuración
+    getConfiguracion().then((cfg) => {
+      setNombreInstitucion(cfg.nombre_institucion)
+      setLogoUrl(cfg.logo_url)
+    })
+
+    // Cargar áreas
+    supabase
+      .from("areas")
+      .select("id, nombre")
+      .then(({ data, error }) => {
+        if (error) {
+          console.error("Error cargando áreas:", error)
+        } else if (data) {
+          setAreas(data)
+        }
+      })
   }, [])
 
-  // Obtener la nota de una materia en un trimestre específico
+  // Crear mapa de áreas para acceso rápido
+  const areaMap = useMemo(() => {
+    const map: Record<string, string> = {}
+    areas.forEach((a) => (map[a.id] = a.nombre))
+    return map
+  }, [areas])
+
+  return { nombreInstitucion, logoUrl, areas, areaMap }
+}
+
+// Hook personalizado para agrupar materias por área
+function useMateriasPorArea(materias: Materia[], areaMap: Record<string, string>) {
+  return useMemo(() => {
+    // Enriquecer materias con nombre de área
+    const materiasConArea: MateriaConArea[] = materias.map((m) => ({
+      ...m,
+      areaNombre: m.id_area && areaMap[m.id_area] ? areaMap[m.id_area] : "Sin área",
+    }))
+
+    // Ordenar por área y luego por orden
+    const ordenadas = [...materiasConArea].sort((a, b) => {
+      const areaA = a.areaNombre || "Sin área"
+      const areaB = b.areaNombre || "Sin área"
+
+      if (areaA !== areaB) {
+        return areaA.localeCompare(areaB)
+      }
+      return (a.orden ?? 0) - (b.orden ?? 0)
+    })
+
+    // Agrupar por área
+    const agrupadas: MateriasAgrupadas = {}
+    ordenadas.forEach((materia) => {
+      const areaId = materia.id_area || "sin-area"
+      if (!agrupadas[areaId]) {
+        agrupadas[areaId] = {
+          areaNombre: materia.areaNombre || "Sin área",
+          materias: [],
+        }
+      }
+      agrupadas[areaId].materias.push(materia)
+    })
+
+    return agrupadas
+  }, [materias, areaMap])
+}
+
+// Componente para el encabezado del boletín (versión impresa)
+function BoletinHeader({
+  alumno,
+  curso,
+  nombreInstitucion,
+  logoUrl,
+}: {
+  alumno: Alumno
+  curso?: Curso
+  nombreInstitucion: string
+  logoUrl: string | null
+}) {
+  return (
+    <div className="hidden print:block mb-6">
+      <div className="flex items-center justify-center gap-4 mb-2">
+        {logoUrl && (
+          <img src={logoUrl || "/placeholder.svg"} alt="Logo institucional" className="h-16 w-auto object-contain" />
+        )}
+        <div>
+          <h2 className="text-xl font-bold text-center">Boletín de Calificaciones</h2>
+          <h3 className="text-lg font-semibold text-center">{nombreInstitucion}</h3>
+        </div>
+      </div>
+      <div className="mt-4">
+        <p>
+          <strong>Alumno:</strong> {alumno.apellidos}, {alumno.nombres}
+        </p>
+        <p>
+          <strong>Curso:</strong> {curso?.nombre_largo}
+        </p>
+        <p>
+          <strong>Fecha:</strong> {new Date().toLocaleDateString()}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+// Componente para las firmas del boletín (versión impresa)
+function BoletinFooter() {
+  return (
+    <div className="mt-8 hidden print:flex justify-between px-12">
+      <div className="text-center">
+        <div className="border-t border-black pt-2 w-40 mx-auto mt-16"></div>
+        <p>Director/a</p>
+      </div>
+      <div className="text-center">
+        <div className="border-t border-black pt-2 w-40 mx-auto mt-16"></div>
+        <p>Padre o Apoderado</p>
+      </div>
+    </div>
+  )
+}
+
+// Función para generar un boletín en PDF para un alumno específico
+export async function generarBoletinPDF(
+  alumno: Alumno,
+  curso: Curso | undefined,
+  materias: Materia[],
+  calificaciones: BoletinNotasProps["calificaciones"],
+  nombreInstitucion: string,
+  logoUrl: string | null,
+  areaMap: Record<string, string>,
+  doc?: jsPDF,
+  addPageBreak = true,
+): Promise<jsPDF> {
+  // Crear un nuevo documento si no se proporciona uno
+  const pdfDoc = doc || new jsPDF({ unit: "mm", format: "a4" })
+
+  // Si estamos añadiendo a un documento existente y se solicita un salto de página
+  if (doc && addPageBreak) {
+    pdfDoc.addPage()
+  }
+
+  // Funciones para calcular calificaciones
   const getCalificacion = (materiaId: string, trimestre: 1 | 2 | 3): number | null => {
-    const calificacionesTrimestre =
+    const list =
       trimestre === 1
         ? calificaciones.trimestre1
         : trimestre === 2
           ? calificaciones.trimestre2
           : calificaciones.trimestre3
 
-    const calificacion = calificacionesTrimestre.find(
-      (cal) => cal.alumno_id === alumno?.cod_moodle && cal.materia_id === materiaId,
-    )
-
-    return calificacion?.nota ?? null
+    const cal = list.find((c) => c.alumno_id === alumno.cod_moodle && c.materia_id === materiaId)
+    return cal?.nota ?? null
   }
 
-  // Calcular el promedio anual de una materia
   const calcularPromedioMateria = (materiaId: string): number => {
-    const nota1 = getCalificacion(materiaId, 1)
-    const nota2 = getCalificacion(materiaId, 2)
-    const nota3 = getCalificacion(materiaId, 3)
+    const notas = [1, 2, 3]
+      .map((t) => getCalificacion(materiaId, t as 1 | 2 | 3))
+      .filter((n): n is number => n !== null)
 
-    const notas = [nota1, nota2, nota3].filter((nota): nota is number => nota !== null)
-
-    if (notas.length === 0) return 0
-
-    const suma = notas.reduce((acc, nota) => acc + nota, 0)
-    return Math.round((suma / notas.length) * 100) / 100
+    if (!notas.length) return 0
+    return Math.round((notas.reduce((s, n) => s + n, 0) / notas.length) * 100) / 100
   }
 
-  // Calcular el promedio de un trimestre
-  const calcularPromedioTrimestre = (trimestre: 1 | 2 | 3): number => {
-    const notasTrimestre = materias
-      .map((materia) => getCalificacion(materia.codigo, trimestre))
-      .filter((nota): nota is number => nota !== null)
-
-    if (notasTrimestre.length === 0) return 0
-
-    const suma = notasTrimestre.reduce((acc, nota) => acc + nota, 0)
-    return Math.round((suma / notasTrimestre.length) * 100) / 100
+  const calcularPromedioTrimestre = (tr: 1 | 2 | 3): number => {
+    const notas = materias.map((m) => getCalificacion(m.codigo, tr)).filter((n): n is number => n !== null)
+    if (!notas.length) return 0
+    return Math.round((notas.reduce((s, n) => s + n, 0) / notas.length) * 100) / 100
   }
 
-  // Calcular el promedio anual
   const calcularPromedioAnual = (): number => {
-    const promedioT1 = calcularPromedioTrimestre(1)
-    const promedioT2 = calcularPromedioTrimestre(2)
-    const promedioT3 = calcularPromedioTrimestre(3)
-
-    // Si no hay notas en algún trimestre, no lo consideramos para el promedio
-    const promedios = []
-    if (promedioT1 > 0) promedios.push(promedioT1)
-    if (promedioT2 > 0) promedios.push(promedioT2)
-    if (promedioT3 > 0) promedios.push(promedioT3)
-
-    if (promedios.length === 0) return 0
-
-    const suma = promedios.reduce((acc, prom) => acc + prom, 0)
-    return Math.round((suma / promedios.length) * 100) / 100
+    const proms = [1, 2, 3].map((t) => calcularPromedioTrimestre(t as 1 | 2 | 3)).filter((p) => p > 0)
+    if (!proms.length) return 0
+    return Math.round((proms.reduce((s, p) => s + p, 0) / proms.length) * 100) / 100
   }
 
-  // Exportar a PDF
+  // Agrupar materias por área
+  const materiasConArea: MateriaConArea[] = materias.map((m) => ({
+    ...m,
+    areaNombre: m.id_area && areaMap[m.id_area] ? areaMap[m.id_area] : "Sin área",
+  }))
+
+  // Ordenar por área y luego por orden
+  const ordenadas = [...materiasConArea].sort((a, b) => {
+    const areaA = a.areaNombre || "Sin área"
+    const areaB = b.areaNombre || "Sin área"
+
+    if (areaA !== areaB) {
+      return areaA.localeCompare(areaB)
+    }
+    return (a.orden ?? 0) - (b.orden ?? 0)
+  })
+
+  // Agrupar por área
+  const materiasAgrupadas: MateriasAgrupadas = {}
+  ordenadas.forEach((materia) => {
+    const areaId = materia.id_area || "sin-area"
+    if (!materiasAgrupadas[areaId]) {
+      materiasAgrupadas[areaId] = {
+        areaNombre: materia.areaNombre || "Sin área",
+        materias: [],
+      }
+    }
+    materiasAgrupadas[areaId].materias.push(materia)
+  })
+
+  // Añadir logo si existe
+  if (logoUrl) {
+    try {
+      const img = new Image()
+      img.crossOrigin = "anonymous"
+
+      await new Promise((resolve, reject) => {
+        img.onload = resolve
+        img.onerror = reject
+        img.src = logoUrl
+      })
+
+      // Calcular dimensiones para mantener proporción
+      const imgWidth = 25
+      const imgHeight = (img.height * imgWidth) / img.width
+
+      pdfDoc.addImage(img, "JPEG", 15, 10, imgWidth, imgHeight)
+    } catch (error) {
+      console.error("Error al cargar el logo:", error)
+    }
+  }
+
+  // Título y encabezado
+  pdfDoc.setFontSize(16)
+  pdfDoc.text("Boletín de Calificaciones", 105, 15, { align: "center" })
+  pdfDoc.setFontSize(14)
+  pdfDoc.text(nombreInstitucion, 105, 22, { align: "center" })
+
+  // Información del alumno y curso
+  pdfDoc.setFontSize(12)
+  pdfDoc.text(`Alumno: ${alumno.apellidos}, ${alumno.nombres}`, 15, 35)
+  pdfDoc.text(`Curso: ${curso?.nombre_largo || ""}`, 15, 40)
+  pdfDoc.text(`Fecha: ${new Date().toLocaleDateString()}`, 15, 45)
+
+  // Preparar datos para la tabla
+  const head = [["Área", "Materia", "1er Trimestre", "2do Trimestre", "3er Trimestre", "Promedio Anual"]]
+  const body = []
+
+  // Datos de materias agrupados por área
+  Object.values(materiasAgrupadas).forEach((grupo) => {
+    let primeraFila = true
+
+    grupo.materias.forEach((materia) => {
+      const nota1 = getCalificacion(materia.codigo, 1)
+      const nota2 = getCalificacion(materia.codigo, 2)
+      const nota3 = getCalificacion(materia.codigo, 3)
+      const promedio = calcularPromedioMateria(materia.codigo)
+
+      body.push([
+        primeraFila ? grupo.areaNombre : "",
+        materia.nombre_largo,
+        nota1 !== null ? nota1.toFixed(2) : "-",
+        nota2 !== null ? nota2.toFixed(2) : "-",
+        nota3 !== null ? nota3.toFixed(2) : "-",
+        promedio.toFixed(2),
+      ])
+
+      primeraFila = false
+    })
+  })
+
+  // Agregar promedio general
+  body.push([
+    "PROMEDIO GENERAL",
+    "",
+    calcularPromedioTrimestre(1).toFixed(2),
+    calcularPromedioTrimestre(2).toFixed(2),
+    calcularPromedioTrimestre(3).toFixed(2),
+    calcularPromedioAnual().toFixed(2),
+  ])
+
+  // Generar tabla
+  autoTable(pdfDoc, {
+    startY: 50,
+    head: head,
+    body: body,
+    theme: "grid",
+    headStyles: {
+      fillColor: [100, 100, 100],
+      textColor: [255, 255, 255],
+      fontStyle: "bold",
+      halign: "center",
+    },
+    columnStyles: {
+      0: { cellWidth: 35 },
+      1: { cellWidth: 50 },
+      2: { halign: "center" },
+      3: { halign: "center" },
+      4: { halign: "center" },
+      5: { halign: "center", fontStyle: "bold" },
+    },
+    styles: {
+      fontSize: 9,
+      cellPadding: 3,
+    },
+    didParseCell: (data) => {
+      // Estilo para la fila de promedio general
+      if (data.row.index === body.length - 1) {
+        data.cell.styles.fontStyle = "bold"
+        data.cell.styles.fillColor = [220, 220, 220]
+      }
+    },
+  })
+
+  // Pie de página con firmas
+  const pageHeight = pdfDoc.internal.pageSize.getHeight()
+  pdfDoc.setLineWidth(0.5)
+  pdfDoc.line(40, pageHeight - 40, 80, pageHeight - 40) // Línea para firma del director
+  pdfDoc.line(120, pageHeight - 40, 160, pageHeight - 40) // Línea para firma del padre/apoderado
+
+  pdfDoc.setFontSize(10)
+  pdfDoc.text("Director/a", 60, pageHeight - 35, { align: "center" })
+  pdfDoc.text("Padre o Apoderado", 140, pageHeight - 35, { align: "center" })
+
+  return pdfDoc
+}
+
+// Componente principal
+export function BoletinNotas({ alumno, curso, materias, calificaciones, alumnos }: BoletinNotasProps) {
+  const { toast } = useToast()
+  const boletinRef = useRef<HTMLDivElement>(null)
+  const [isExporting, setIsExporting] = useState(false)
+  const [isExportingAll, setIsExportingAll] = useState(false)
+
+  // Cargar configuración y áreas
+  const { nombreInstitucion, logoUrl, areaMap } = useConfiguracionYAreas()
+
+  // Agrupar materias por área
+  const materiasAgrupadas = useMateriasPorArea(materias, areaMap)
+
+  // Funciones para calcular calificaciones
+  const getCalificacion = (materiaId: string, trimestre: 1 | 2 | 3): number | null => {
+    if (!alumno) return null
+
+    const list =
+      trimestre === 1
+        ? calificaciones.trimestre1
+        : trimestre === 2
+          ? calificaciones.trimestre2
+          : calificaciones.trimestre3
+
+    const cal = list.find((c) => c.alumno_id === alumno.cod_moodle && c.materia_id === materiaId)
+    return cal?.nota ?? null
+  }
+
+  const calcularPromedioMateria = (materiaId: string): number => {
+    const notas = [1, 2, 3]
+      .map((t) => getCalificacion(materiaId, t as 1 | 2 | 3))
+      .filter((n): n is number => n !== null)
+
+    if (!notas.length) return 0
+    return Math.round((notas.reduce((s, n) => s + n, 0) / notas.length) * 100) / 100
+  }
+
+  const calcularPromedioTrimestre = (tr: 1 | 2 | 3): number => {
+    const notas = materias.map((m) => getCalificacion(m.codigo, tr)).filter((n): n is number => n !== null)
+    if (!notas.length) return 0
+    return Math.round((notas.reduce((s, n) => s + n, 0) / notas.length) * 100) / 100
+  }
+
+  const calcularPromedioAnual = (): number => {
+    const proms = [1, 2, 3].map((t) => calcularPromedioTrimestre(t as 1 | 2 | 3)).filter((p) => p > 0)
+    if (!proms.length) return 0
+    return Math.round((proms.reduce((s, p) => s + p, 0) / proms.length) * 100) / 100
+  }
+
+  // Función para exportar a PDF
   const exportarPDF = async () => {
     if (!alumno) return
-
     setIsExporting(true)
 
     try {
-      const doc = new jsPDF({
-        orientation: "portrait",
-        unit: "mm",
-        format: "a4",
-      })
-
-      // Añadir logo si existe
-      if (logoUrl) {
-        try {
-          const img = new Image()
-          img.crossOrigin = "anonymous"
-
-          await new Promise((resolve, reject) => {
-            img.onload = resolve
-            img.onerror = reject
-            img.src = logoUrl
-          })
-
-          // Calcular dimensiones para mantener proporción
-          const imgWidth = 25
-          const imgHeight = (img.height * imgWidth) / img.width
-
-          // Centrar el logo en la parte superior
-          const pageWidth = doc.internal.pageSize.getWidth()
-          const xPos = (pageWidth - imgWidth) / 2
-
-          doc.addImage(img, "JPEG", xPos, 10, imgWidth, imgHeight)
-        } catch (error) {
-          console.error("Error al cargar el logo:", error)
-        }
-      }
-
-      // Título
-      const yPos = logoUrl ? 45 : 20
-      doc.setFontSize(16)
-      doc.text("BOLETÍN DE CALIFICACIONES", doc.internal.pageSize.getWidth() / 2, yPos, { align: "center" })
-      doc.setFontSize(14)
-      doc.text(nombreInstitucion, doc.internal.pageSize.getWidth() / 2, yPos + 7, { align: "center" })
-
-      // Información del alumno
-      doc.setFontSize(12)
-      doc.text(`Alumno: ${alumno.apellidos}, ${alumno.nombres}`, 15, yPos + 20)
-      doc.text(`Código: ${alumno.cod_moodle}`, 15, yPos + 27)
-      doc.text(`Curso: ${curso?.nombre_largo || ""}`, 15, yPos + 34)
-      doc.text(`Gestión: ${new Date().getFullYear()}`, 15, yPos + 41)
-      doc.text(`Fecha de emisión: ${new Date().toLocaleDateString()}`, 15, yPos + 48)
-
-      // Preparar datos para la tabla
-      const head = [
-        [
-          { content: "Materia", rowSpan: 2 },
-          { content: "1er Trimestre", colSpan: 1 },
-          { content: "2do Trimestre", colSpan: 1 },
-          { content: "3er Trimestre", colSpan: 1 },
-          { content: "Promedio Anual", rowSpan: 2 },
-        ],
-      ]
-
-      const body = materias.map((materia) => {
-        const nota1 = getCalificacion(materia.codigo, 1)
-        const nota2 = getCalificacion(materia.codigo, 2)
-        const nota3 = getCalificacion(materia.codigo, 3)
-        const promedioMateria = calcularPromedioMateria(materia.codigo)
-
-        return [
-          materia.nombre_largo,
-          nota1 !== null ? nota1.toFixed(2) : "-",
-          nota2 !== null ? nota2.toFixed(2) : "-",
-          nota3 !== null ? nota3.toFixed(2) : "-",
-          promedioMateria.toFixed(2),
-        ]
-      })
-
-      // Añadir fila de promedios
-      const promedioT1 = calcularPromedioTrimestre(1)
-      const promedioT2 = calcularPromedioTrimestre(2)
-      const promedioT3 = calcularPromedioTrimestre(3)
-      const promedioAnual = calcularPromedioAnual()
-
-      body.push([
-        { content: "PROMEDIO", styles: { fontStyle: "bold" } },
-        { content: promedioT1.toFixed(2), styles: { fontStyle: "bold" } },
-        { content: promedioT2.toFixed(2), styles: { fontStyle: "bold" } },
-        { content: promedioT3.toFixed(2), styles: { fontStyle: "bold" } },
-        { content: promedioAnual.toFixed(2), styles: { fontStyle: "bold" } },
-      ])
-
-      // Generar tabla
-      autoTable(doc, {
-        head,
-        body,
-        startY: yPos + 55,
-        theme: "grid",
-        headStyles: { fillColor: [100, 100, 100], fontSize: 10, halign: "center" },
-        bodyStyles: { fontSize: 10 },
-        columnStyles: {
-          0: { cellWidth: 70 },
-          1: { halign: "center" },
-          2: { halign: "center" },
-          3: { halign: "center" },
-          4: { halign: "center" },
-        },
-      })
-
-      // Sección de firmas
-      const finalY = (doc as any).lastAutoTable.finalY + 20
-
-      doc.line(40, finalY + 20, 90, finalY + 20) // Línea para firma del director
-      doc.line(120, finalY + 20, 170, finalY + 20) // Línea para firma del profesor
-
-      doc.setFontSize(10)
-      doc.text("Director/a", 65, finalY + 25, { align: "center" })
-      doc.text("Profesor/a Tutor/a", 145, finalY + 25, { align: "center" })
-
-      // Pie de página
-      doc.setFontSize(8)
-      doc.text(
-        `Página 1 de 1 - Boletín de Calificaciones - ${nombreInstitucion}`,
-        doc.internal.pageSize.getWidth() / 2,
-        doc.internal.pageSize.getHeight() - 10,
-        { align: "center" },
-      )
-
-      // Guardar PDF
+      const doc = await generarBoletinPDF(alumno, curso, materias, calificaciones, nombreInstitucion, logoUrl, areaMap)
       doc.save(`Boletin_${alumno.apellidos}_${alumno.nombres}.pdf`)
-
-      toast({
-        title: "PDF generado",
-        description: "El boletín se ha exportado correctamente.",
-      })
+      toast({ title: "PDF generado", description: "El boletín se ha exportado correctamente." })
     } catch (error) {
       console.error("Error al generar PDF:", error)
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "No se pudo generar el PDF.",
-      })
+      toast({ variant: "destructive", title: "Error", description: "No se pudo generar el PDF." })
     } finally {
       setIsExporting(false)
     }
   }
 
-  // Imprimir
-  const imprimir = () => {
-    window.print()
+  // Función para exportar todos los boletines
+  const exportarTodosLosBoletienes = async () => {
+    if (!alumnos || alumnos.length === 0 || !curso) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "No hay alumnos para generar boletines.",
+      })
+      return
+    }
+
+    setIsExportingAll(true)
+
+    try {
+      // Crear un nuevo documento PDF
+      let doc = new jsPDF({ unit: "mm", format: "a4" })
+
+      // Generar boletín para cada alumno
+      for (let i = 0; i < alumnos.length; i++) {
+        const alumnoActual = alumnos[i]
+        // No añadir salto de página para el primer alumno
+        doc = await generarBoletinPDF(
+          alumnoActual,
+          curso,
+          materias,
+          calificaciones,
+          nombreInstitucion,
+          logoUrl,
+          areaMap,
+          doc,
+          i > 0, // Añadir salto de página excepto para el primer alumno
+        )
+      }
+
+      // Guardar el documento combinado
+      doc.save(`Boletines_${curso.nombre_corto}.pdf`)
+
+      toast({
+        title: "PDF generado",
+        description: `Se han generado ${alumnos.length} boletines en un solo documento.`,
+      })
+    } catch (error) {
+      console.error("Error al generar PDF combinado:", error)
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "No se pudieron generar todos los boletines.",
+      })
+    } finally {
+      setIsExportingAll(false)
+    }
   }
 
+  // Función para imprimir
+  const imprimir = () => window.print()
+
+  // Si no hay alumno seleccionado
   if (!alumno) {
     return (
       <Card>
@@ -268,93 +503,90 @@ export function BoletinNotas({ alumno, curso, materias, calificaciones }: Boleti
     )
   }
 
+  // Renderizar boletín
   return (
     <Card className="print:shadow-none" id="boletin-container">
-      <CardHeader className="flex flex-row items-center justify-between print:hidden">
+      <CardHeader className="flex items-center justify-between print:hidden">
         <CardTitle>Boletín de Calificaciones</CardTitle>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={imprimir}>
-            <Printer className="mr-2 h-4 w-4" />
-            Imprimir
+            <Printer className="mr-2 h-4 w-4" /> Imprimir
           </Button>
           <Button size="sm" onClick={exportarPDF} disabled={isExporting}>
-            <Download className="mr-2 h-4 w-4" />
-            Exportar PDF
+            <Download className="mr-2 h-4 w-4" /> Exportar PDF
           </Button>
+          {alumnos && alumnos.length > 0 && (
+            <Button size="sm" variant="secondary" onClick={exportarTodosLosBoletienes} disabled={isExportingAll}>
+              <Users className="mr-2 h-4 w-4" /> Exportar Todos
+            </Button>
+          )}
         </div>
       </CardHeader>
-      <CardContent ref={boletinRef}>
-        <div className="mb-6">
-          <div className="flex flex-col items-center justify-center mb-4">
-            {logoUrl && (
-              <img
-                src={logoUrl || "/placeholder.svg"}
-                alt="Logo institucional"
-                className="h-20 w-auto object-contain mb-2"
-              />
-            )}
-            <h2 className="text-xl font-bold text-center mb-1">BOLETÍN DE CALIFICACIONES</h2>
-            <h3 className="text-lg font-semibold text-center">{nombreInstitucion}</h3>
-          </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-6">
-            <div>
-              <p>
-                <strong>Alumno:</strong> {alumno.apellidos}, {alumno.nombres}
-              </p>
-              <p>
-                <strong>Código:</strong> {alumno.cod_moodle}
-              </p>
-            </div>
-            <div>
-              <p>
-                <strong>Curso:</strong> {curso?.nombre_largo}
-              </p>
-              <p>
-                <strong>Gestión:</strong> {new Date().getFullYear()}
-              </p>
-            </div>
-          </div>
-        </div>
+      <CardContent>
+        {/* Encabezado para impresión */}
+        <BoletinHeader alumno={alumno} curso={curso} nombreInstitucion={nombreInstitucion} logoUrl={logoUrl} />
 
-        <div className="rounded-md border overflow-x-auto">
+        {/* Tabla de calificaciones */}
+        <div className="rounded-md border overflow-x-auto" ref={boletinRef}>
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="min-w-[180px]">Materia</TableHead>
+                <TableHead rowSpan={2}>Área</TableHead>
+                <TableHead rowSpan={2}>Materia</TableHead>
                 <TableHead className="text-center">1er Trimestre</TableHead>
                 <TableHead className="text-center">2do Trimestre</TableHead>
                 <TableHead className="text-center">3er Trimestre</TableHead>
-                <TableHead className="text-center">Promedio Anual</TableHead>
+                <TableHead className="text-center" rowSpan={2}>
+                  Promedio Anual
+                </TableHead>
               </TableRow>
             </TableHeader>
+
             <TableBody>
-              {materias.length === 0 ? (
+              {Object.keys(materiasAgrupadas).length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="h-24 text-center">
+                  <TableCell colSpan={6} className="h-24 text-center">
                     No hay materias para mostrar.
                   </TableCell>
                 </TableRow>
               ) : (
                 <>
-                  {materias.map((materia) => {
-                    const nota1 = getCalificacion(materia.codigo, 1)
-                    const nota2 = getCalificacion(materia.codigo, 2)
-                    const nota3 = getCalificacion(materia.codigo, 3)
-                    const promedioMateria = calcularPromedioMateria(materia.codigo)
+                  {/* Materias agrupadas por área */}
+                  {Object.values(materiasAgrupadas).map((grupo, groupIndex) => (
+                    <React.Fragment key={`area-${groupIndex}`}>
+                      {grupo.materias.map((materia, idx) => {
+                        const nota1 = getCalificacion(materia.codigo, 1)
+                        const nota2 = getCalificacion(materia.codigo, 2)
+                        const nota3 = getCalificacion(materia.codigo, 3)
+                        const promedio = calcularPromedioMateria(materia.codigo)
 
-                    return (
-                      <TableRow key={materia.codigo}>
-                        <TableCell>{materia.nombre_largo}</TableCell>
-                        <TableCell className="text-center">{nota1 !== null ? nota1.toFixed(2) : "-"}</TableCell>
-                        <TableCell className="text-center">{nota2 !== null ? nota2.toFixed(2) : "-"}</TableCell>
-                        <TableCell className="text-center">{nota3 !== null ? nota3.toFixed(2) : "-"}</TableCell>
-                        <TableCell className="text-center font-medium">{promedioMateria.toFixed(2)}</TableCell>
-                      </TableRow>
-                    )
-                  })}
+                        return (
+                          <TableRow key={materia.codigo}>
+                            {idx === 0 && (
+                              <TableCell
+                                rowSpan={grupo.materias.length}
+                                className="align-middle bg-muted/30 font-medium"
+                              >
+                                {grupo.areaNombre}
+                              </TableCell>
+                            )}
+                            <TableCell>{materia.nombre_largo}</TableCell>
+                            <TableCell className="text-center">{nota1 !== null ? nota1.toFixed(2) : "-"}</TableCell>
+                            <TableCell className="text-center">{nota2 !== null ? nota2.toFixed(2) : "-"}</TableCell>
+                            <TableCell className="text-center">{nota3 !== null ? nota3.toFixed(2) : "-"}</TableCell>
+                            <TableCell className="text-center font-medium">{promedio.toFixed(2)}</TableCell>
+                          </TableRow>
+                        )
+                      })}
+                    </React.Fragment>
+                  ))}
+
+                  {/* Promedio general */}
                   <TableRow className="bg-muted/50">
-                    <TableCell className="font-bold">PROMEDIO</TableCell>
+                    <TableCell colSpan={2} className="font-bold">
+                      PROMEDIO GENERAL
+                    </TableCell>
                     <TableCell className="text-center font-bold">{calcularPromedioTrimestre(1).toFixed(2)}</TableCell>
                     <TableCell className="text-center font-bold">{calcularPromedioTrimestre(2).toFixed(2)}</TableCell>
                     <TableCell className="text-center font-bold">{calcularPromedioTrimestre(3).toFixed(2)}</TableCell>
@@ -366,14 +598,8 @@ export function BoletinNotas({ alumno, curso, materias, calificaciones }: Boleti
           </Table>
         </div>
 
-        <div className="mt-12 grid grid-cols-2 gap-8 print:mt-20">
-          <div className="text-center">
-            <div className="border-t border-gray-300 mx-auto w-40 pt-2">Director/a</div>
-          </div>
-          <div className="text-center">
-            <div className="border-t border-gray-300 mx-auto w-40 pt-2">Profesor/a Tutor/a</div>
-          </div>
-        </div>
+        {/* Pie de página para impresión */}
+        <BoletinFooter />
       </CardContent>
     </Card>
   )

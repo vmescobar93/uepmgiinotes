@@ -53,7 +53,7 @@ export function PdfGenerator({
     doc.setFontSize(10)
     doc.text(`Fecha: ${dateStr}`, width / 2, 20, { align: "center" })
 
-        // Datos de curso y materia
+    // Datos de curso y materia
     const materiaObj = materias.find((m) => m.codigo === selectedMateria)
     const curso = materiaObj?.curso_corto || ""
     // Colocar curso y materia en posiciones fijas

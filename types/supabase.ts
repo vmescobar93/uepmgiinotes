@@ -81,18 +81,41 @@ export interface Database {
           nombre_corto: string
           nombre_largo: string
           curso_corto: string | null
+          id_area?: string | null
+          orden: number | null
         }
         Insert: {
           codigo: string
           nombre_corto: string
           nombre_largo: string
           curso_corto?: string | null
+          id_area?: string | null
+          orden?: number | null
         }
         Update: {
           codigo?: string
           nombre_corto?: string
           nombre_largo?: string
           curso_corto?: string | null
+          id_area?: string | null
+          orden?: number | null
+        }
+      }
+      areas: {
+        Row: {
+          id: string
+          nombre: string
+          orden: number
+        }
+        Insert: {
+          id?: string
+          nombre: string
+          orden: number
+        }
+        Update: {
+          id?: string
+          nombre?: string
+          orden?: number
         }
       }
       materias_profesores: {

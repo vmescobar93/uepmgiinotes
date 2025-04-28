@@ -7,25 +7,30 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
-import { FileText, Printer, Loader2 } from "lucide-react"
+import { FileText, Printer, Loader2, Users, Medal } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import { supabase } from "@/lib/supabase"
 import { CentralizadorInterno } from "@/components/reportes/centralizador-interno"
 import { CentralizadorMinedu } from "@/components/reportes/centralizador-minedu"
-import { BoletinNotas } from "@/components/reportes/boletin-notas"
+import { BoletinNotas, generarBoletinPDF } from "@/components/reportes/boletin-notas"
+import { RankingAlumnos } from "@/components/reportes/ranking-alumnos"
 import type { Database } from "@/types/supabase"
+import { jsPDF } from "jspdf"
+import { getConfiguracion } from "@/lib/config"
 
 type Curso = Database["public"]["Tables"]["cursos"]["Row"]
 type Alumno = Database["public"]["Tables"]["alumnos"]["Row"]
 type Materia = Database["public"]["Tables"]["materias"]["Row"]
 type Calificacion = Database["public"]["Tables"]["calificaciones"]["Row"]
 type Agrupacion = Database["public"]["Tables"]["agrupaciones_materias"]["Row"]
+type AreaMateria = Database["public"]["Tables"]["areas"]["Row"]
 
 export default function ReportesPage() {
   const [cursos, setCursos] = useState<Curso[]>([])
   const [alumnos, setAlumnos] = useState<Alumno[]>([])
   const [materias, setMaterias] = useState<Materia[]>([])
   const [agrupaciones, setAgrupaciones] = useState<Agrupacion[]>([])
+  const [areas, setAreas] = useState<AreaMateria[]>([])
   const [calificaciones, setCalificaciones] = useState<{
     trimestre1: Calificacion[]
     trimestre2: Calificacion[]
@@ -40,9 +45,14 @@ export default function ReportesPage() {
   const [selectedAlumno, setSelectedAlumno] = useState("")
   const [selectedTrimestre, setSelectedTrimestre] = useState("1")
   const [isLoading, setIsLoading] = useState(false)
+  const [isGeneratingAllBoletines, setIsGeneratingAllBoletines] = useState(false)
   const [showCentralizador, setShowCentralizador] = useState(false)
   const [showCentralizadorMinedu, setShowCentralizadorMinedu] = useState(false)
   const [showBoletin, setShowBoletin] = useState(false)
+  // Añadir un nuevo estado para controlar la visualización del ranking
+  const [showRanking, setShowRanking] = useState(false)
+  const [isLoadingRanking, setIsLoadingRanking] = useState(false)
+  const [todosLosAlumnos, setTodosLosAlumnos] = useState<Alumno[]>([])
 
   const { toast } = useToast()
 
@@ -53,6 +63,19 @@ export default function ReportesPage() {
       if (data) setCursos(data)
     }
     fetchCursos()
+  }, [])
+
+  // Cargar áreas de materias - Corregido para usar la tabla "areas"
+  useEffect(() => {
+    const fetchAreas = async () => {
+      const { data, error } = await supabase.from("areas").select("*")
+      if (error) {
+        console.error("Error al cargar áreas:", error)
+      } else if (data) {
+        setAreas(data)
+      }
+    }
+    fetchAreas()
   }, [])
 
   // Cargar alumnos cuando se selecciona un curso
@@ -75,6 +98,110 @@ export default function ReportesPage() {
 
     fetchAlumnos()
   }, [selectedCurso])
+
+  // Añadir una función para generar el ranking de alumnos
+  // Función para generar el ranking de alumnos
+  const handleGenerarRanking = async () => {
+    if (!selectedCurso) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Seleccione un curso para generar el ranking.",
+      })
+      return
+    }
+
+    setIsLoadingRanking(true)
+    setShowRanking(false)
+    setShowCentralizador(false)
+    setShowCentralizadorMinedu(false)
+    setShowBoletin(false)
+
+    try {
+      let alumnosData: Alumno[] = []
+
+      if (selectedCurso === "TODOS") {
+        // Cargar todos los alumnos activos
+        const { data } = await supabase.from("alumnos").select("*").eq("activo", true).order("apellidos")
+
+        if (data) {
+          alumnosData = data
+        }
+      } else {
+        // Cargar alumnos del curso seleccionado
+        const { data } = await supabase
+          .from("alumnos")
+          .select("*")
+          .eq("curso_corto", selectedCurso)
+          .eq("activo", true)
+          .order("apellidos")
+
+        if (data) {
+          alumnosData = data
+        }
+      }
+
+      setTodosLosAlumnos(alumnosData)
+
+      // Cargar todas las materias
+      const { data: materiasData } = await supabase.from("materias").select("codigo, curso_corto")
+
+      if (!materiasData || materiasData.length === 0) {
+        throw new Error("No hay materias registradas")
+      }
+
+      // Obtener códigos de materias
+      const codigosMaterias = materiasData.map((m) => m.codigo)
+
+      // Obtener códigos de alumnos
+      const codigosAlumnos = alumnosData.map((a) => a.cod_moodle)
+
+      if (codigosAlumnos.length === 0) {
+        throw new Error("No hay alumnos para mostrar")
+      }
+
+      // Cargar calificaciones del primer trimestre
+      const { data: calificacionesT1 } = await supabase
+        .from("calificaciones")
+        .select("*")
+        .in("materia_id", codigosMaterias)
+        .in("alumno_id", codigosAlumnos)
+        .eq("trimestre", 1)
+
+      // Cargar calificaciones del segundo trimestre
+      const { data: calificacionesT2 } = await supabase
+        .from("calificaciones")
+        .select("*")
+        .in("materia_id", codigosMaterias)
+        .in("alumno_id", codigosAlumnos)
+        .eq("trimestre", 2)
+
+      // Cargar calificaciones del tercer trimestre
+      const { data: calificacionesT3 } = await supabase
+        .from("calificaciones")
+        .select("*")
+        .in("materia_id", codigosMaterias)
+        .in("alumno_id", codigosAlumnos)
+        .eq("trimestre", 3)
+
+      setCalificaciones({
+        trimestre1: calificacionesT1 || [],
+        trimestre2: calificacionesT2 || [],
+        trimestre3: calificacionesT3 || [],
+      })
+
+      setShowRanking(true)
+    } catch (error) {
+      console.error("Error al cargar datos para el ranking:", error)
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "No se pudieron cargar los datos para el ranking.",
+      })
+    } finally {
+      setIsLoadingRanking(false)
+    }
+  }
 
   // Función para generar el centralizador interno
   const handleGenerarCentralizador = async () => {
@@ -241,15 +368,22 @@ export default function ReportesPage() {
         .from("materias")
         .select("*")
         .eq("curso_corto", selectedCurso)
-        .order("nombre_largo")
+        .order("orden", { ascending: true, nullsLast: true })
 
       if (materiasData) {
         setMaterias(materiasData)
+      } else {
+        setMaterias([])
       }
 
       // Cargar calificaciones de los tres trimestres
-      if (materiasData && materiasData.length > 0) {
-        const codigosMaterias = materiasData.map((m) => m.codigo)
+      const { data: materiasSimples } = await supabase
+        .from("materias")
+        .select("codigo")
+        .eq("curso_corto", selectedCurso)
+
+      if (materiasSimples && materiasSimples.length > 0) {
+        const codigosMaterias = materiasSimples.map((m) => m.codigo)
 
         // Cargar calificaciones del primer trimestre
         const { data: calificacionesT1 } = await supabase
@@ -292,6 +426,118 @@ export default function ReportesPage() {
       })
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  // Función para generar todos los boletines del curso
+  const handleGenerarTodosBoletines = async () => {
+    if (!selectedCurso || alumnos.length === 0) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Seleccione un curso con alumnos para generar todos los boletines.",
+      })
+      return
+    }
+
+    setIsGeneratingAllBoletines(true)
+
+    try {
+      // Cargar materias del curso
+      const { data: materiasData } = await supabase
+        .from("materias")
+        .select("*")
+        .eq("curso_corto", selectedCurso)
+        .order("orden", { ascending: true, nullsLast: true })
+
+      if (!materiasData || materiasData.length === 0) {
+        throw new Error("No hay materias para este curso")
+      }
+
+      // Cargar calificaciones de todos los alumnos para los tres trimestres
+      const codigosMaterias = materiasData.map((m) => m.codigo)
+      const codigosAlumnos = alumnos.map((a) => a.cod_moodle)
+
+      // Cargar calificaciones del primer trimestre para todos los alumnos
+      const { data: calificacionesT1 } = await supabase
+        .from("calificaciones")
+        .select("*")
+        .in("materia_id", codigosMaterias)
+        .in("alumno_id", codigosAlumnos)
+        .eq("trimestre", 1)
+
+      // Cargar calificaciones del segundo trimestre para todos los alumnos
+      const { data: calificacionesT2 } = await supabase
+        .from("calificaciones")
+        .select("*")
+        .in("materia_id", codigosMaterias)
+        .in("alumno_id", codigosAlumnos)
+        .eq("trimestre", 2)
+
+      // Cargar calificaciones del tercer trimestre para todos los alumnos
+      const { data: calificacionesT3 } = await supabase
+        .from("calificaciones")
+        .select("*")
+        .in("materia_id", codigosMaterias)
+        .in("alumno_id", codigosAlumnos)
+        .eq("trimestre", 3)
+
+      const todasCalificaciones = {
+        trimestre1: calificacionesT1 || [],
+        trimestre2: calificacionesT2 || [],
+        trimestre3: calificacionesT3 || [],
+      }
+
+      // Cargar configuración y áreas
+      const config = await getConfiguracion()
+      const { data: areasData } = await supabase.from("areas").select("id, nombre")
+
+      // Crear mapa de áreas
+      const areaMap: Record<string, string> = {}
+      if (areasData) {
+        areasData.forEach((area) => {
+          areaMap[area.id] = area.nombre
+        })
+      }
+
+      // Crear un nuevo documento PDF
+      let doc = new jsPDF({ unit: "mm", format: "a4" })
+
+      // Generar boletín para cada alumno
+      const cursoObj = cursos.find((c) => c.nombre_corto === selectedCurso)
+
+      for (let i = 0; i < alumnos.length; i++) {
+        const alumnoActual = alumnos[i]
+        // No añadir salto de página para el primer alumno
+        doc = await generarBoletinPDF(
+          alumnoActual,
+          cursoObj,
+          materiasData,
+          todasCalificaciones,
+          config.nombre_institucion,
+          config.logo_url,
+          areaMap,
+          doc,
+          i > 0, // Añadir salto de página excepto para el primer alumno
+        )
+      }
+
+      // Guardar el documento combinado
+      doc.save(`Boletines_${selectedCurso}.pdf`)
+
+      toast({
+        title: "PDF generado",
+        description: `Se han generado ${alumnos.length} boletines en un solo documento.`,
+      })
+    } catch (error) {
+      console.error("Error al generar todos los boletines:", error)
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "No se pudieron generar todos los boletines.",
+      })
+    } finally {
+      setIsGeneratingAllBoletines(false)
     }
   }
 
@@ -487,6 +733,24 @@ export default function ReportesPage() {
                       </>
                     )}
                   </Button>
+
+                  <Button
+                    onClick={handleGenerarTodosBoletines}
+                    disabled={!selectedCurso || alumnos.length === 0 || isGeneratingAllBoletines}
+                    variant="secondary"
+                  >
+                    {isGeneratingAllBoletines ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Generando...
+                      </>
+                    ) : (
+                      <>
+                        <Users className="mr-2 h-4 w-4" />
+                        Generar Todos los Boletines
+                      </>
+                    )}
+                  </Button>
                 </div>
               </CardContent>
             </Card>
@@ -497,6 +761,7 @@ export default function ReportesPage() {
                 curso={cursos.find((c) => c.nombre_corto === selectedCurso)}
                 materias={materias}
                 calificaciones={calificaciones}
+                alumnos={alumnos}
               />
             )}
           </TabsContent>
@@ -536,20 +801,39 @@ export default function ReportesPage() {
                         <SelectItem value="1">Primer Trimestre</SelectItem>
                         <SelectItem value="2">Segundo Trimestre</SelectItem>
                         <SelectItem value="3">Tercer Trimestre</SelectItem>
-                        <SelectItem value="FINAL">Calificación Final</SelectItem>
+                        <SelectItem value="FINAL">Promedio Anual</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                 </div>
 
                 <div className="flex flex-col gap-2 md:flex-row">
-                  <Button disabled={!selectedCurso}>
-                    <FileText className="mr-2 h-4 w-4" />
-                    Generar Ranking
+                  <Button onClick={handleGenerarRanking} disabled={!selectedCurso || isLoadingRanking}>
+                    {isLoadingRanking ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Cargando...
+                      </>
+                    ) : (
+                      <>
+                        <Medal className="mr-2 h-4 w-4" />
+                        Generar Ranking
+                      </>
+                    )}
                   </Button>
                 </div>
               </CardContent>
             </Card>
+
+            {showRanking && (
+              <RankingAlumnos
+                alumnos={todosLosAlumnos}
+                cursos={cursos}
+                calificaciones={calificaciones}
+                selectedCurso={selectedCurso}
+                selectedTrimestre={selectedTrimestre}
+              />
+            )}
           </TabsContent>
         </Tabs>
       </div>

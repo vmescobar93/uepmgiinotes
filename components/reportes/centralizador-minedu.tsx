@@ -31,6 +31,14 @@ interface MateriaAgrupada {
   nombre_grupo: string
   nombre_mostrar: string
   materias: string[]
+  orden: number // Valor mínimo de orden entre las materias del grupo
+}
+
+interface ElementoOrdenado {
+  tipo: "grupo" | "materia"
+  id: string // id_area-nombre_grupo para grupos, codigo para materias
+  nombre: string // nombre_grupo para grupos, nombre_corto para materias
+  orden: number
 }
 
 export function CentralizadorMinedu({
@@ -46,6 +54,9 @@ export function CentralizadorMinedu({
   const [isExporting, setIsExporting] = useState(false)
   const [nombreInstitucion, setNombreInstitucion] = useState("U.E. Plena María Goretti II")
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
+  const [elementosOrdenados, setElementosOrdenados] = useState<ElementoOrdenado[]>([])
+  const [materiasAgrupadas, setMateriasAgrupadas] = useState<Record<string, MateriaAgrupada>>({})
+  const [materiasNoAgrupadas, setMateriasNoAgrupadas] = useState<Materia[]>([])
 
   // Cargar configuración
   useEffect(() => {
@@ -57,51 +68,97 @@ export function CentralizadorMinedu({
     loadConfig()
   }, [])
 
-  // Agrupar materias según las agrupaciones
-  const materiasAgrupadas: MateriaAgrupada[] = []
-  const materiasNoAgrupadas: string[] = []
+  // Procesar materias y agrupaciones
+  useEffect(() => {
+    if (!materias.length) return
 
-  // Identificar materias agrupadas y no agrupadas
-  if (agrupaciones.length > 0) {
-    // Agrupar por id_area y nombre_grupo
-    const grupos = agrupaciones.reduce(
-      (acc, agrupacion) => {
+    // Crear un mapa para acceder rápidamente a las materias por código
+    const materiasMap = new Map<string, Materia>()
+    materias.forEach((materia) => {
+      materiasMap.set(materia.codigo, materia)
+    })
+
+    // Identificar materias agrupadas y no agrupadas
+    const grupos: Record<string, MateriaAgrupada> = {}
+    const noAgrupadas: Materia[] = []
+    const materiasAgrupadasCodigos = new Set<string>()
+
+    if (agrupaciones.length > 0) {
+      // Procesar agrupaciones
+      agrupaciones.forEach((agrupacion) => {
+        if (!agrupacion.materia_codigo) return
+
         const key = `${agrupacion.id_area}-${agrupacion.nombre_grupo}`
-        if (!acc[key]) {
-          acc[key] = {
+
+        if (!grupos[key]) {
+          grupos[key] = {
             id_area: agrupacion.id_area,
             nombre_grupo: agrupacion.nombre_grupo,
             nombre_mostrar: agrupacion.nombre_mostrar,
             materias: [],
+            orden: Number.POSITIVE_INFINITY,
           }
         }
-        if (agrupacion.materia_codigo) {
-          acc[key].materias.push(agrupacion.materia_codigo)
+
+        grupos[key].materias.push(agrupacion.materia_codigo)
+        materiasAgrupadasCodigos.add(agrupacion.materia_codigo)
+      })
+
+      // Calcular el orden mínimo para cada grupo
+      Object.values(grupos).forEach((grupo) => {
+        let minOrden = Number.POSITIVE_INFINITY
+
+        grupo.materias.forEach((codigo) => {
+          const materia = materiasMap.get(codigo)
+          if (materia && materia.orden !== null && materia.orden < minOrden) {
+            minOrden = materia.orden
+          }
+        })
+
+        grupo.orden = minOrden === Number.POSITIVE_INFINITY ? 1000 : minOrden
+      })
+
+      // Identificar materias no agrupadas
+      materias.forEach((materia) => {
+        if (!materiasAgrupadasCodigos.has(materia.codigo)) {
+          noAgrupadas.push(materia)
         }
-        return acc
-      },
-      {} as Record<string, MateriaAgrupada>,
-    )
+      })
+    } else {
+      // Si no hay agrupaciones, todas las materias son no agrupadas
+      noAgrupadas.push(...materias)
+    }
 
-    // Convertir a array
-    Object.values(grupos).forEach((grupo) => {
-      materiasAgrupadas.push(grupo)
+    // Crear lista combinada de elementos ordenados
+    const elementos: ElementoOrdenado[] = []
+
+    // Añadir grupos
+    Object.entries(grupos).forEach(([key, grupo]) => {
+      elementos.push({
+        tipo: "grupo",
+        id: key,
+        nombre: grupo.nombre_grupo,
+        orden: grupo.orden,
+      })
     })
 
-    // Identificar materias no agrupadas
-    const materiasAgrupadasCodigos = agrupaciones
-      .map((a) => a.materia_codigo)
-      .filter((codigo): codigo is string => !!codigo)
-
-    materias.forEach((materia) => {
-      if (!materiasAgrupadasCodigos.includes(materia.codigo)) {
-        materiasNoAgrupadas.push(materia.codigo)
-      }
+    // Añadir materias no agrupadas
+    noAgrupadas.forEach((materia) => {
+      elementos.push({
+        tipo: "materia",
+        id: materia.codigo,
+        nombre: materia.nombre_corto,
+        orden: materia.orden !== null ? materia.orden : 1000,
+      })
     })
-  } else {
-    // Si no hay agrupaciones, todas las materias son no agrupadas
-    materiasNoAgrupadas.push(...materias.map((m) => m.codigo))
-  }
+
+    // Ordenar todos los elementos por el campo orden
+    elementos.sort((a, b) => a.orden - b.orden)
+
+    setElementosOrdenados(elementos)
+    setMateriasAgrupadas(grupos)
+    setMateriasNoAgrupadas(noAgrupadas)
+  }, [materias, agrupaciones])
 
   // Obtener la nota de un alumno en una materia específica
   const getCalificacion = (alumnoId: string, materiaId: string): number | null => {
@@ -172,34 +229,28 @@ export function CentralizadorMinedu({
       // Preparar datos para la tabla
       const head = [["#", "Código", "Apellidos", "Nombres"]]
 
-      // Añadir encabezados de materias agrupadas
-      materiasAgrupadas.forEach((grupo) => {
-        head[0].push(grupo.nombre_grupo)
+      // Añadir encabezados según el orden calculado
+      elementosOrdenados.forEach((elemento) => {
+        head[0].push(elemento.nombre)
       })
-
-      // Añadir encabezados de materias no agrupadas
-      materias
-        .filter((materia) => materiasNoAgrupadas.includes(materia.codigo))
-        .forEach((materia) => {
-          head[0].push(materia.nombre_corto)
-        })
 
       const body = alumnos.map((alumno, index) => {
         const row = [(index + 1).toString(), alumno.cod_moodle, alumno.apellidos, alumno.nombres]
 
-        // Añadir notas de grupos
-        materiasAgrupadas.forEach((grupo) => {
-          const promedio = calcularPromedioGrupo(alumno.cod_moodle, grupo.materias)
-          row.push(promedio === 0 ? "-" : promedio.toString())
+        // Añadir notas según el orden calculado
+        elementosOrdenados.forEach((elemento) => {
+          if (elemento.tipo === "grupo") {
+            const grupo = materiasAgrupadas[elemento.id]
+            const promedio = calcularPromedioGrupo(alumno.cod_moodle, grupo.materias)
+            row.push(promedio === 0 ? "-" : promedio.toString())
+          } else {
+            const materia = materiasNoAgrupadas.find((m) => m.codigo === elemento.id)
+            if (materia) {
+              const nota = getCalificacion(alumno.cod_moodle, materia.codigo)
+              row.push(nota !== null ? Math.round(nota).toString() : "-")
+            }
+          }
         })
-
-        // Añadir notas de materias no agrupadas
-        materias
-          .filter((materia) => materiasNoAgrupadas.includes(materia.codigo))
-          .forEach((materia) => {
-            const nota = getCalificacion(alumno.cod_moodle, materia.codigo)
-            row.push(nota !== null ? Math.round(nota).toString() : "-")
-          })
 
         return row
       })
@@ -308,31 +359,21 @@ export function CentralizadorMinedu({
                 <TableHead>Apellidos</TableHead>
                 <TableHead>Nombres</TableHead>
 
-                {/* Encabezados de materias agrupadas */}
-                {materiasAgrupadas.map((grupo) => (
-                  <TableHead key={`${grupo.id_area}-${grupo.nombre_grupo}`} className="text-center whitespace-nowrap">
-                    {grupo.nombre_grupo}
-                    <span className="sr-only">{grupo.nombre_mostrar}</span>
+                {/* Encabezados según el orden calculado */}
+                {elementosOrdenados.map((elemento) => (
+                  <TableHead key={elemento.id} className="text-center whitespace-nowrap">
+                    {elemento.nombre}
+                    {elemento.tipo === "grupo" && (
+                      <span className="sr-only">{materiasAgrupadas[elemento.id].nombre_mostrar}</span>
+                    )}
                   </TableHead>
                 ))}
-
-                {/* Encabezados de materias no agrupadas */}
-                {materias
-                  .filter((materia) => materiasNoAgrupadas.includes(materia.codigo))
-                  .map((materia) => (
-                    <TableHead key={materia.codigo} className="text-center whitespace-nowrap">
-                      {materia.nombre_corto}
-                    </TableHead>
-                  ))}
               </TableRow>
             </TableHeader>
             <TableBody>
               {alumnos.length === 0 ? (
                 <TableRow>
-                  <TableCell
-                    colSpan={4 + materiasAgrupadas.length + materiasNoAgrupadas.length}
-                    className="h-24 text-center"
-                  >
+                  <TableCell colSpan={4 + elementosOrdenados.length} className="h-24 text-center">
                     No hay alumnos para mostrar.
                   </TableCell>
                 </TableRow>
@@ -344,30 +385,28 @@ export function CentralizadorMinedu({
                     <TableCell>{alumno.apellidos}</TableCell>
                     <TableCell>{alumno.nombres}</TableCell>
 
-                    {/* Notas de materias agrupadas */}
-                    {materiasAgrupadas.map((grupo) => {
-                      const promedio = calcularPromedioGrupo(alumno.cod_moodle, grupo.materias)
-                      return (
-                        <TableCell
-                          key={`${alumno.cod_moodle}-${grupo.id_area}-${grupo.nombre_grupo}`}
-                          className="text-center font-medium"
-                        >
-                          {promedio === 0 ? "-" : promedio}
-                        </TableCell>
-                      )
-                    })}
+                    {/* Notas según el orden calculado */}
+                    {elementosOrdenados.map((elemento) => {
+                      if (elemento.tipo === "grupo") {
+                        const grupo = materiasAgrupadas[elemento.id]
+                        const promedio = calcularPromedioGrupo(alumno.cod_moodle, grupo.materias)
+                        return (
+                          <TableCell key={`${alumno.cod_moodle}-${elemento.id}`} className="text-center font-medium">
+                            {promedio === 0 ? "-" : promedio}
+                          </TableCell>
+                        )
+                      } else {
+                        const materia = materiasNoAgrupadas.find((m) => m.codigo === elemento.id)
+                        if (!materia) return <TableCell key={`${alumno.cod_moodle}-${elemento.id}`}>-</TableCell>
 
-                    {/* Notas de materias no agrupadas */}
-                    {materias
-                      .filter((materia) => materiasNoAgrupadas.includes(materia.codigo))
-                      .map((materia) => {
                         const nota = getCalificacion(alumno.cod_moodle, materia.codigo)
                         return (
-                          <TableCell key={`${alumno.cod_moodle}-${materia.codigo}`} className="text-center">
+                          <TableCell key={`${alumno.cod_moodle}-${elemento.id}`} className="text-center">
                             {nota !== null ? Math.round(nota) : "-"}
                           </TableCell>
                         )
-                      })}
+                      }
+                    })}
                   </TableRow>
                 ))
               )}
@@ -376,11 +415,11 @@ export function CentralizadorMinedu({
         </div>
 
         {/* Leyenda de agrupaciones */}
-        {materiasAgrupadas.length > 0 && (
+        {Object.keys(materiasAgrupadas).length > 0 && (
           <div className="mt-6 text-sm">
             <h3 className="font-semibold mb-2">Leyenda de agrupaciones:</h3>
             <ul className="space-y-1">
-              {materiasAgrupadas.map((grupo) => (
+              {Object.values(materiasAgrupadas).map((grupo) => (
                 <li key={`leyenda-${grupo.id_area}-${grupo.nombre_grupo}`}>
                   <strong>{grupo.nombre_grupo}</strong> ({grupo.nombre_mostrar}):{" "}
                   {grupo.materias.map(getNombreMateria).join(", ")}

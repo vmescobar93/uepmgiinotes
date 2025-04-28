@@ -36,6 +36,7 @@ export function CentralizadorInterno({
   const [isExporting, setIsExporting] = useState(false)
   const [nombreInstitucion, setNombreInstitucion] = useState("U.E. Plena María Goretti II")
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
+  const [materiasOrdenadas, setMateriasOrdenadas] = useState<Materia[]>([])
 
   // Cargar configuración
   useEffect(() => {
@@ -47,6 +48,18 @@ export function CentralizadorInterno({
     loadConfig()
   }, [])
 
+  // Ordenar materias por el campo "orden"
+  useEffect(() => {
+    const ordenadas = [...materias].sort((a, b) => {
+      // Si el campo orden es null, colocar al final
+      if (a.orden === null) return 1
+      if (b.orden === null) return -1
+      // Ordenar por el campo orden
+      return a.orden - b.orden
+    })
+    setMateriasOrdenadas(ordenadas)
+  }, [materias])
+
   // Obtener la nota de un alumno en una materia específica
   const getCalificacion = (alumnoId: string, materiaId: string): number | null => {
     const calificacion = calificaciones.find((cal) => cal.alumno_id === alumnoId && cal.materia_id === materiaId)
@@ -55,7 +68,7 @@ export function CentralizadorInterno({
 
   // Calcular el promedio de un alumno
   const calcularPromedio = (alumnoId: string): number => {
-    const notasAlumno = materias
+    const notasAlumno = materiasOrdenadas
       .map((materia) => getCalificacion(alumnoId, materia.codigo))
       .filter((nota): nota is number => nota !== null)
 
@@ -113,10 +126,12 @@ export function CentralizadorInterno({
       doc.text(`Fecha: ${new Date().toLocaleDateString()}`, 15, 40)
 
       // Preparar datos para la tabla
-      const head = [["#", "Código", "Apellidos", "Nombres", ...materias.map((m) => m.nombre_corto), "Promedio"]]
+      const head = [
+        ["#", "Código", "Apellidos", "Nombres", ...materiasOrdenadas.map((m) => m.nombre_corto), "Promedio"],
+      ]
 
       const body = alumnos.map((alumno, index) => {
-        const notas = materias.map((materia) => {
+        const notas = materiasOrdenadas.map((materia) => {
           const nota = getCalificacion(alumno.cod_moodle, materia.codigo)
           return nota !== null ? nota.toFixed(2) : "-"
         })
@@ -144,7 +159,7 @@ export function CentralizadorInterno({
         columnStyles: {
           0: { halign: "center", cellWidth: 8 },
           1: { cellWidth: 15 },
-          [4 + materias.length]: { halign: "center", fontStyle: "bold" },
+          [4 + materiasOrdenadas.length]: { halign: "center", fontStyle: "bold" },
         },
       })
 
@@ -231,7 +246,7 @@ export function CentralizadorInterno({
                 <TableHead className="w-20">Código</TableHead>
                 <TableHead>Apellidos</TableHead>
                 <TableHead>Nombres</TableHead>
-                {materias.map((materia) => (
+                {materiasOrdenadas.map((materia) => (
                   <TableHead key={materia.codigo} className="text-center whitespace-nowrap">
                     {materia.nombre_corto}
                   </TableHead>
@@ -242,7 +257,7 @@ export function CentralizadorInterno({
             <TableBody>
               {alumnos.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5 + materias.length} className="h-24 text-center">
+                  <TableCell colSpan={5 + materiasOrdenadas.length} className="h-24 text-center">
                     No hay alumnos para mostrar.
                   </TableCell>
                 </TableRow>
@@ -253,7 +268,7 @@ export function CentralizadorInterno({
                     <TableCell>{alumno.cod_moodle}</TableCell>
                     <TableCell>{alumno.apellidos}</TableCell>
                     <TableCell>{alumno.nombres}</TableCell>
-                    {materias.map((materia) => {
+                    {materiasOrdenadas.map((materia) => {
                       const nota = getCalificacion(alumno.cod_moodle, materia.codigo)
                       return (
                         <TableCell key={materia.codigo} className="text-center">
