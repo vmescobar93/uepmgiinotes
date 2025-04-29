@@ -20,7 +20,7 @@ export async function generarCentralizadorInternoPDF(
   calificaciones: Calificacion[],
   trimestre: string,
   nombreInstitucion: string,
-  logoUrl: string | null,
+  //logoUrl: string | null,
 ): Promise<jsPDF> {
   const doc = configurarDocumentoPDF({
     orientation: "landscape",
@@ -29,6 +29,9 @@ export async function generarCentralizadorInternoPDF(
 
   // Añadir logo si existe
   try {
+    const { data: configData } = await supabase.from("configuracion").select("logo_url").eq("id", 1).single()
+    const logoUrl = configData?.logo_url || null
+
     const img = await cargarLogo(logoUrl)
     if (img) {
       // Calcular dimensiones para mantener proporción
