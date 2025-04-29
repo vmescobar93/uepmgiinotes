@@ -117,10 +117,13 @@ export async function generarBoletinPDF(
       const imgWidth = 70
       const imgHeight = (img.height * imgWidth) / img.width
 
+      console.log("Añadiendo logo al PDF de boletín:", imgWidth, imgHeight)
       pdfDoc.addImage(img, "JPEG", 10, 10, imgWidth, imgHeight)
+    } else {
+      console.warn("No se pudo cargar el logo para el boletín")
     }
   } catch (error) {
-    console.error("Error al añadir el logo al PDF:", error)
+    console.error("Error al añadir el logo al PDF de boletín:", error)
   }
 
   // Título y encabezado

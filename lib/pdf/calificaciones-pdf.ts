@@ -67,31 +67,49 @@ export async function generarCalificacionesPDF({
   const width = doc.internal.pageSize.getWidth()
   const height = doc.internal.pageSize.getHeight()
 
-  // Añadir logo si existe
-  try {
-    // Obtener el logo de la configuración
-    const { data: configData } = await supabase.from("configuracion").select("logo_url").eq("id", 1).single()
-    const logoUrl = configData?.logo_url
+  // Función para cargar el logo desde la URL
+  async function cargarLogo(logoUrl: string | null): Promise<HTMLImageElement | null> {
+    if (!logoUrl) {
+      console.warn("No se proporcionó una URL de logo.")
+      return null
+    }
 
-    if (logoUrl) {
+    try {
       const img = new Image()
       img.crossOrigin = "anonymous"
 
       await new Promise((resolve, reject) => {
-        img.onload = resolve
+        img.onload = () => resolve(img)
         img.onerror = reject
         img.src = logoUrl
       })
 
+      return img
+    } catch (error) {
+      console.error("Error al cargar el logo:", error)
+      return null
+    }
+  }
+
+  // Añadir logo si existe
+  try {
+    // Obtener la URL del logo desde la configuración
+    const { data: configData } = await supabase.from("configuracion").select("logo_url").eq("id", 1).single()
+    const logoUrl = configData?.logo_url || null
+
+    const img = await cargarLogo(logoUrl)
+    if (img) {
       // Calcular dimensiones para mantener proporción
-      const imgWidth = 75
+      const imgWidth = 70
       const imgHeight = (img.height * imgWidth) / img.width
 
-      doc.addImage(img, "JPEG", 15, 10, imgWidth, imgHeight)
+      console.log("Añadiendo logo al PDF de calificaciones:", imgWidth, imgHeight)
+      doc.addImage(img, "JPEG", 10, 10, imgWidth, imgHeight)
+    } else {
+      console.warn("No se pudo cargar el logo para las calificaciones")
     }
   } catch (error) {
-    console.error("Error al obtener o añadir logo:", error)
-    // Continuar sin el logo si hay error
+    console.error("Error al añadir el logo al PDF de calificaciones:", error)
   }
 
   // Título y fecha

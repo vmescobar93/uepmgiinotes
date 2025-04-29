@@ -35,10 +35,13 @@ export async function generarCentralizadorInternoPDF(
       const imgWidth = 75
       const imgHeight = (img.height * imgWidth) / img.width
 
+      console.log("Añadiendo logo al PDF de centralizador interno:", imgWidth, imgHeight)
       doc.addImage(img, "JPEG", 15, 10, imgWidth, imgHeight)
+    } else {
+      console.warn("No se pudo cargar el logo para el centralizador interno")
     }
   } catch (error) {
-    console.error("Error al añadir el logo al PDF:", error)
+    console.error("Error al añadir el logo al PDF de centralizador interno:", error)
   }
 
   // Título
