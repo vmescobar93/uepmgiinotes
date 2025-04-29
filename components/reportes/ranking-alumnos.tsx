@@ -5,10 +5,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Download, Printer, Medal } from "lucide-react"
-import { jsPDF } from "jspdf"
-import autoTable from "jspdf-autotable"
 import { useToast } from "@/components/ui/use-toast"
 import { getConfiguracion } from "@/lib/config"
+import { generarRankingPDF } from "@/lib/pdf/index"
 import type { Database } from "@/types/supabase"
 
 type Alumno = Database["public"]["Tables"]["alumnos"]["Row"] & {
@@ -153,122 +152,15 @@ export function RankingAlumnos({
     setIsExporting(true)
 
     try {
-      const doc = new jsPDF({
-        orientation: "portrait",
-        unit: "mm",
-        format: "a4",
-        putOnlyUsedFonts: true,
-        compress: true,
+      // Usar la función centralizada para generar el PDF
+      const doc = await generarRankingPDF({
+        alumnos: alumnosRanking,
+        cursos,
+        selectedCurso,
+        selectedTrimestre,
+        nombreInstitucion,
+        logoUrl,
       })
-
-      // Configurar fuentes para soportar caracteres especiales
-      doc.setFont("helvetica", "normal")
-      doc.setLanguage("es-MX")
-
-      // Añadir logo si existe
-      if (logoUrl) {
-        try {
-          const img = new Image()
-          img.crossOrigin = "anonymous"
-
-          await new Promise((resolve, reject) => {
-            img.onload = resolve
-            img.onerror = reject
-            img.src = logoUrl
-          })
-
-          // Calcular dimensiones para mantener proporción
-          const imgWidth = 25
-          const imgHeight = (img.height * imgWidth) / img.width
-
-          doc.addImage(img, "JPEG", 15, 10, imgWidth, imgHeight)
-        } catch (error) {
-          console.error("Error al cargar el logo:", error)
-        }
-      }
-
-      // Título
-      const trimestreTexto =
-        selectedTrimestre === "1"
-          ? "Primer Trimestre"
-          : selectedTrimestre === "2"
-            ? "Segundo Trimestre"
-            : selectedTrimestre === "3"
-              ? "Tercer Trimestre"
-              : "Promedio Anual"
-
-      const cursoTexto =
-        selectedCurso === "TODOS"
-          ? "Todos los Cursos"
-          : cursos.find((c) => c.nombre_corto === selectedCurso)?.nombre_largo || selectedCurso
-
-      doc.setFontSize(16)
-      doc.text(`Ranking de Alumnos - ${trimestreTexto}`, doc.internal.pageSize.getWidth() / 2, 15, { align: "center" })
-
-      // Nombre de la institución
-      doc.setFontSize(14)
-      doc.text(nombreInstitucion, doc.internal.pageSize.getWidth() / 2, 22, { align: "center" })
-
-      // Información del curso
-      doc.setFontSize(12)
-      doc.text(`Curso: ${cursoTexto}`, 15, 35)
-      doc.text(`Fecha: ${new Date().toLocaleDateString()}`, 15, 40)
-
-      // Preparar datos para la tabla
-      const head = [["Posición", "Código", "Apellidos", "Nombres", "Curso", "Promedio"]]
-
-      const body = alumnosRanking.map((alumno) => [
-        alumno.posicion.toString(),
-        alumno.cod_moodle,
-        alumno.apellidos,
-        alumno.nombres,
-        alumno.curso_nombre,
-        alumno.promedio.toFixed(2),
-      ])
-
-      // Generar tabla
-      autoTable(doc, {
-        head,
-        body,
-        startY: 45,
-        theme: "grid",
-        headStyles: { fillColor: [245, 166, 10], fontSize: 10, halign: "center" },
-        bodyStyles: { fontSize: 9, font: "helvetica" },
-        columnStyles: {
-          0: { halign: "center", cellWidth: 15 },
-          5: { halign: "center", fontStyle: "bold" },
-        },
-        didParseCell: (data) => {
-          // Destacar los tres primeros lugares
-          if (data.section === "body" && data.column.index === 0) {
-            const posicion = Number.parseInt(data.cell.text[0])
-            if (posicion <= 3) {
-              data.cell.styles.fontStyle = "bold"
-
-              if (posicion === 1) {
-                data.cell.styles.fillColor = [255, 215, 0, 0.3] // Oro
-              } else if (posicion === 2) {
-                data.cell.styles.fillColor = [192, 192, 192, 0.3] // Plata
-              } else if (posicion === 3) {
-                data.cell.styles.fillColor = [205, 127, 50, 0.3] // Bronce
-              }
-            }
-          }
-        },
-      })
-
-      // Pie de página
-      const pageCount = doc.getNumberOfPages()
-      for (let i = 1; i <= pageCount; i++) {
-        doc.setPage(i)
-        doc.setFontSize(8)
-        doc.text(
-          `Página ${i} de ${pageCount} - ${nombreInstitucion}`,
-          doc.internal.pageSize.getWidth() / 2,
-          doc.internal.pageSize.getHeight() - 10,
-          { align: "center" },
-        )
-      }
 
       // Guardar PDF
       const cursoFileName = selectedCurso === "TODOS" ? "TodosLosCursos" : selectedCurso

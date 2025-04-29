@@ -1,6 +1,5 @@
 import { jsPDF } from "jspdf"
 
-
 /**
  * Configura un documento PDF con opciones comunes
  */

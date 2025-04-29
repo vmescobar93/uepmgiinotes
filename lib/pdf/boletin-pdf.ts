@@ -30,7 +30,7 @@ export async function generarBoletinPDF(
   addPageBreak = true,
 ): Promise<jsPDF> {
   // Crear un nuevo documento si no se proporciona uno
-  const pdfDoc = doc || new jsPDF({ format: "letter", orientation: "portrait" })
+  const pdfDoc = doc || new jsPDF({ format: "letter", orientation: "portrait", compress: true })
 
   // Si estamos añadiendo a un documento existente y se solicita un salto de página
   if (doc && addPageBreak) {
@@ -131,9 +131,9 @@ export async function generarBoletinPDF(
     }
   }
 
-// Añadir logo si existe
+  // Añadir logo si existe
   try {
-   // Obtener la URL del logo desde la configuración
+    // Obtener la URL del logo desde la configuración
     const { data: configData } = await supabase.from("configuracion").select("logo_url").eq("id", 1).single()
     const logoUrl = configData?.logo_url || null
 
@@ -151,7 +151,6 @@ export async function generarBoletinPDF(
   } catch (error) {
     console.error("Error al añadir el logo al PDF de boletín:", error)
   }
-
 
   // Título y encabezado
   pdfDoc.setFontSize(16)
