@@ -26,7 +26,7 @@ export async function generarCentralizadorMineduPDF(
   const doc = configurarDocumentoPDF({
     orientation: "landscape",
     format: "letter",
-    compress: true,
+    compress: false,
   })
 
   async function cargarLogo(logoUrl: string | null): Promise<HTMLImageElement | null> {

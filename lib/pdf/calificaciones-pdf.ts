@@ -61,7 +61,7 @@ export async function generarCalificacionesPDF({
     orientation: "portrait",
     format: "letter",
     putOnlyUsedFonts: true,
-    compress: true,
+    compress: false,
   })
 
   const width = doc.internal.pageSize.getWidth()

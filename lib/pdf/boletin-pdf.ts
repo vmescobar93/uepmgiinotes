@@ -30,7 +30,7 @@ export async function generarBoletinPDF(
   addPageBreak = true,
 ): Promise<jsPDF> {
   // Crear un nuevo documento si no se proporciona uno
-  const pdfDoc = doc || new jsPDF({ format: "letter", orientation: "portrait", compress: true })
+  const pdfDoc = doc || new jsPDF({ format: "letter", orientation: "portrait", compress: false })
 
   // Si estamos añadiendo a un documento existente y se solicita un salto de página
   if (doc && addPageBreak) {

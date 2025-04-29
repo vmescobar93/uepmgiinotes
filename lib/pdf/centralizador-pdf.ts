@@ -25,7 +25,7 @@ export async function generarCentralizadorInternoPDF(
   const doc = configurarDocumentoPDF({
     orientation: "landscape",
     format: [216, 330],
-    compress: true,
+    compress: false,
   })
 
   async function cargarLogo(logoUrl: string | null): Promise<HTMLImageElement | null> {

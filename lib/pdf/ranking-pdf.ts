@@ -38,10 +38,10 @@ export async function generarRankingPDF(options: GenerarRankingPDFOptions): Prom
     orientation: "portrait",
     format: "letter",
     putOnlyUsedFonts: true,
-    compress: true,
+    compress: false, // Desactivar compresión
   })
 
-async function cargarLogo(logoUrl: string | null): Promise<HTMLImageElement | null> {
+  async function cargarLogo(logoUrl: string | null): Promise<HTMLImageElement | null> {
     if (!logoUrl) {
       console.warn("No se proporcionó una URL de logo.")
       return null
@@ -104,11 +104,10 @@ async function cargarLogo(logoUrl: string | null): Promise<HTMLImageElement | nu
   doc.text(`Ranking de Alumnos`, 195, 15, { align: "right" })
   doc.text(`${trimestreTexto}`, 195, 21, { align: "right" })
 
-
   // Información del curso
   doc.setFontSize(12)
   doc.text(`Curso: ${cursoTexto}`, 15, 35)
-  doc.text(`Fecha: ${new Date().toLocaleDateString('es-ES')}`, 195, 35, { align: "right" })
+  doc.text(`Fecha: ${new Date().toLocaleDateString("es-ES")}`, 195, 35, { align: "right" })
 
   // Preparar datos para la tabla
   const head = [["Posición", "Apellidos", "Nombres", "Promedio"]]
@@ -132,36 +131,34 @@ async function cargarLogo(logoUrl: string | null): Promise<HTMLImageElement | nu
       0: { halign: "center", cellWidth: 20 },
       3: { halign: "center", fontStyle: "bold" },
     },
-    
+
     didParseCell: (data) => {
       if (data.section === "body") {
         // 1) Calculamos la posición real de la fila
-        const posicion = data.row.index + 1;
+        const posicion = data.row.index + 1
         if (posicion <= 3) {
           // 2) Negrita para los top 3
-          data.cell.styles.fontStyle = "bold";
+          data.cell.styles.fontStyle = "bold"
 
           // 3) Mapa de colores
           const colores = {
-            1: { main: [255, 223, 0], subtle: [255, 240, 180] },   // Oro
+            1: { main: [255, 223, 0], subtle: [255, 240, 180] }, // Oro
             2: { main: [192, 192, 192], subtle: [220, 220, 220] }, // Plata
-            3: { main: [205, 127, 50], subtle: [235, 200, 175] }   // Bronce
-          };
-          const { main, subtle } = colores[posicion];
+            3: { main: [205, 127, 50], subtle: [235, 200, 175] }, // Bronce
+          }
+          const { main, subtle } = colores[posicion]
 
-          // 4) Columnas a colorear: 
-          //    - índice 0 → color “main”
-          //    - índices 1, 2, 3 → color “subtle”
+          // 4) Columnas a colorear:
+          //    - índice 0 → color "main"
+          //    - índices 1, 2, 3 → color "subtle"
           if (data.column.index === 0) {
-            data.cell.styles.fillColor = main;
+            data.cell.styles.fillColor = main
           } else if (data.column.index >= 1 && data.column.index <= 3) {
-            data.cell.styles.fillColor = subtle;
+            data.cell.styles.fillColor = subtle
           }
         }
       }
     },
-
-
   })
 
   // Pie de página
