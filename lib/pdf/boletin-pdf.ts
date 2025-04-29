@@ -108,6 +108,29 @@ export async function generarBoletinPDF(
     materiasAgrupadas[areaId].materias.push(materia)
   })
 
+  async function cargarLogo(logoUrl: string | null): Promise<HTMLImageElement | null> {
+    if (!logoUrl) {
+      console.warn("No se proporcionó una URL de logo.")
+      return null
+    }
+
+    try {
+      const img = new Image()
+      img.crossOrigin = "anonymous"
+
+      await new Promise((resolve, reject) => {
+        img.onload = () => resolve(img)
+        img.onerror = reject
+        img.src = logoUrl
+      })
+
+      return img
+    } catch (error) {
+      console.error("Error al cargar el logo:", error)
+      return null
+    }
+  }
+
   // Añadir logo si existe
   try {
     const { data: configData } = await supabase.from("configuracion").select("logo_url").eq("id", 1).single()
