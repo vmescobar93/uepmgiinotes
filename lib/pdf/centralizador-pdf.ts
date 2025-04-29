@@ -2,7 +2,7 @@ import type { jsPDF } from "jspdf"
 import autoTable from "jspdf-autotable"
 import { getEstiloNotaPDF } from "@/lib/utils"
 import { cargarLogo, configurarDocumentoPDF } from "./utils/pdf-utils"
-import type { Database } from "@/types/supabase"
+import { supabase } from "@/lib/supabase"
 
 // Tipos
 type Curso = Database["public"]["Tables"]["cursos"]["Row"]
