@@ -2,6 +2,7 @@ import { jsPDF } from "jspdf"
 import autoTable from "jspdf-autotable"
 import { getEstiloNotaPDF } from "@/lib/utils"
 import type { Database } from "@/types/supabase"
+import { supabase } from "@/lib/supabase"
 
 // Tipos
 type Alumno = Database["public"]["Tables"]["alumnos"]["Row"]
@@ -14,6 +15,36 @@ interface CalificacionesTrimestres {
   trimestre1: Calificacion[]
   trimestre2: Calificacion[]
   trimestre3: Calificacion[]
+}
+
+/**
+ * Función para cargar el logo desde Supabase
+ */
+async function cargarLogo(logoUrl: string | null): Promise<HTMLImageElement | null> {
+  if (!logoUrl) return null
+
+  try {
+    // Obtener el logo de la configuración si no se proporciona
+    if (logoUrl === "auto") {
+      const { data: configData } = await supabase.from("configuracion").select("logo_url").eq("id", 1).single()
+      logoUrl = configData?.logo_url || null
+      if (!logoUrl) return null
+    }
+
+    const img = new Image()
+    img.crossOrigin = "anonymous"
+
+    await new Promise((resolve, reject) => {
+      img.onload = resolve
+      img.onerror = reject
+      img.src = logoUrl as string
+    })
+
+    return img
+  } catch (error) {
+    console.error("Error al cargar el logo:", error)
+    return null
+  }
 }
 
 /**
@@ -121,25 +152,17 @@ export async function generarBoletinPDF(
   })
 
   // Añadir logo si existe
-  if (logoUrl) {
-    try {
-      const img = new Image()
-      img.crossOrigin = "anonymous"
-
-      await new Promise((resolve, reject) => {
-        img.onload = resolve
-        img.onerror = reject
-        img.src = logoUrl
-      })
-
+  try {
+    const img = await cargarLogo(logoUrl)
+    if (img) {
       // Calcular dimensiones para mantener proporción
       const imgWidth = 70
       const imgHeight = (img.height * imgWidth) / img.width
 
       pdfDoc.addImage(img, "JPEG", 10, 10, imgWidth, imgHeight)
-    } catch (error) {
-      console.error("Error al cargar el logo:", error)
     }
+  } catch (error) {
+    console.error("Error al añadir el logo al PDF:", error)
   }
 
   // Título y encabezado
@@ -319,30 +342,18 @@ export async function generarCentralizadorInternoPDF(
     compress: true,
   })
 
-  // Configurar fuentes para soportar caracteres especiales
-  doc.setFont("helvetica", "normal")
-  doc.setLanguage("es-MX")
-
   // Añadir logo si existe
-  if (logoUrl) {
-    try {
-      const img = new Image()
-      img.crossOrigin = "anonymous"
-
-      await new Promise((resolve, reject) => {
-        img.onload = resolve
-        img.onerror = reject
-        img.src = logoUrl
-      })
-
+  try {
+    const img = await cargarLogo(logoUrl)
+    if (img) {
       // Calcular dimensiones para mantener proporción
       const imgWidth = 75
       const imgHeight = (img.height * imgWidth) / img.width
 
       doc.addImage(img, "JPEG", 15, 10, imgWidth, imgHeight)
-    } catch (error) {
-      console.error("Error al cargar el logo:", error)
     }
+  } catch (error) {
+    console.error("Error al añadir el logo al PDF:", error)
   }
 
   // Título
@@ -523,31 +534,18 @@ export async function generarCentralizadorMineduPDF(
     compress: true,
   })
 
-  // Configurar fuentes para soportar caracteres especiales
-  doc.setFont("helvetica", "normal")
-  doc.setLanguage("es-MX")
-
-  // El resto de la función permanece igual...
   // Añadir logo si existe
-  if (logoUrl) {
-    try {
-      const img = new Image()
-      img.crossOrigin = "anonymous"
-
-      await new Promise((resolve, reject) => {
-        img.onload = resolve
-        img.onerror = reject
-        img.src = logoUrl
-      })
-
+  try {
+    const img = await cargarLogo(logoUrl)
+    if (img) {
       // Calcular dimensiones para mantener proporción
       const imgWidth = 75
       const imgHeight = (img.height * imgWidth) / img.width
 
       doc.addImage(img, "JPEG", 15, 10, imgWidth, imgHeight)
-    } catch (error) {
-      console.error("Error al cargar el logo:", error)
     }
+  } catch (error) {
+    console.error("Error al añadir el logo al PDF:", error)
   }
 
   // Título
@@ -722,7 +720,6 @@ export async function generarCentralizadorMineduPDF(
     bodyStyles: { fontSize: 8 },
     columnStyles: {
       0: { halign: "center", cellWidth: 8 },
-      //1: { cellWidth: 15 },
     },
     didParseCell: (data) => {
       // Centrar todas las columnas de materias

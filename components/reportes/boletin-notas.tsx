@@ -131,7 +131,16 @@ function BoletinHeader({
     <div className="hidden print:block mb-6">
       <div className="flex items-center justify-center gap-4 mb-2">
         {logoUrl && (
-          <img src={logoUrl || "/placeholder.svg"} alt="Logo institucional" className="h-16 w-auto object-contain" />
+          <img
+            src={logoUrl || "/placeholder.svg"}
+            alt="Logo institucional"
+            className="h-16 w-auto object-contain"
+            crossOrigin="anonymous"
+            onError={(e) => {
+              console.error("Error al cargar el logo en la vista previa")
+              e.currentTarget.style.display = "none"
+            }}
+          />
         )}
         <div>
           <h2 className="text-xl font-bold text-center">Boletín de Calificaciones</h2>

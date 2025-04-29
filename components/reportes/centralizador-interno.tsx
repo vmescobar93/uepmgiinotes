@@ -153,6 +153,11 @@ export function CentralizadorInterno({
                 src={logoUrl || "/placeholder.svg"}
                 alt="Logo institucional"
                 className="h-16 w-auto object-contain"
+                crossOrigin="anonymous"
+                onError={(e) => {
+                  console.error("Error al cargar el logo en la vista previa")
+                  e.currentTarget.style.display = "none"
+                }}
               />
             )}
             <div>

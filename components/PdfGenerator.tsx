@@ -11,18 +11,6 @@ import { supabase } from "@/lib/supabase"
 import { useAuth } from "@/context/auth-context"
 import { getEstiloNotaPDF } from "@/lib/utils"
 
-// Eliminar las importaciones de Dialog que ya no necesitamos
-// import {
-//   Dialog,
-//   DialogContent,
-//   DialogDescription,
-//   DialogFooter,
-//   DialogHeader,
-//   DialogTitle,
-// } from "@/components/ui/dialog"
-// import { Label } from "@/components/ui/label"
-// import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-
 type Alumno = Database["public"]["Tables"]["alumnos"]["Row"]
 type Materia = Database["public"]["Tables"]["materias"]["Row"]
 type Profesor = Database["public"]["Tables"]["profesores"]["Row"]
@@ -38,7 +26,6 @@ interface PdfGeneratorProps {
   selectedTrimestre: string
 }
 
-// Reemplazar la función PdfGenerator completa con esta versión actualizada
 export function PdfGenerator({
   profesores,
   materias,
@@ -96,10 +83,6 @@ export function PdfGenerator({
         compress: true,
       })
 
-      // Añadir soporte para caracteres especiales (tildes)
-      doc.setFont("helvetica", "normal")
-      doc.setLanguage("es-MX")
-
       const width = doc.internal.pageSize.getWidth()
       const height = doc.internal.pageSize.getHeight()
 
@@ -134,10 +117,8 @@ export function PdfGenerator({
       const trimestreText = selectedTrimestre === "1" ? "1er" : selectedTrimestre === "2" ? "2do" : "3er"
       const today = new Date()
       const dateStr = today.toLocaleDateString()
-      doc.setFont("helvetica", "bold")
       doc.setFontSize(16)
       doc.text(`Entrega de Notas ${trimestreText} Trimestre`, width - 14, 14, { align: "right" })
-      doc.setFont("helvetica", "normal")
       doc.setFontSize(10)
       doc.text(`Fecha: ${dateStr}`, width - 14, 20, { align: "right" })
 
@@ -215,7 +196,7 @@ export function PdfGenerator({
 
       // Fecha y hora centrada bajo las firmas
       doc.setFontSize(10)
-      doc.text(`Fecha y hora: ${now}`, width / 2, footerY + 12, { align: "center" })
+      doc.text(`Fecha y hora: ${now}`, width / 2, footerY + 15, { align: "center" })
 
       doc.save(`Calificaciones_${selectedMateria}_T${selectedTrimestre}.pdf`)
     } catch (error) {
