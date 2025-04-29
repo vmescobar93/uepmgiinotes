@@ -1,6 +1,6 @@
-import type { jsPDF } from "jspdf"
+import type jsPDF from "jspdf"
 import { generarBoletinPDF } from "./boletin-pdf"
-import { supabase } from "@/lib/supabase"
+import type { Database } from "@/types/supabase"
 
 // Tipos
 type Alumno = Database["public"]["Tables"]["alumnos"]["Row"]
@@ -28,12 +28,16 @@ export async function generarTodosBoletinesPDF(
     throw new Error("No hay alumnos para generar boletines")
   }
 
-  // Generar boletín para cada alumno
-  let doc = await generarBoletinPDF(alumnos[0], curso, materias, calificaciones, nombreInstitucion, logoUrl, areaMap)
+  // Generar boletín para el primer alumno
+  const doc = await generarBoletinPDF(alumnos[0], curso, materias, calificaciones, nombreInstitucion, areaMap)
 
   // Añadir el resto de alumnos
   for (let i = 1; i < alumnos.length; i++) {
-    doc = await generarBoletinPDF(
+    // Añadir una nueva página para cada alumno adicional
+    doc.addPage()
+
+    // Generar el boletín para este alumno en la nueva página
+    await generarBoletinPDF(
       alumnos[i],
       curso,
       materias,
@@ -41,7 +45,7 @@ export async function generarTodosBoletinesPDF(
       nombreInstitucion,
       areaMap,
       doc,
-      true, // Añadir salto de página
+      false, // No añadir salto de página adicional
     )
   }
 

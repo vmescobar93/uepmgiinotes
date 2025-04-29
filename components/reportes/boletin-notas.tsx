@@ -8,7 +8,7 @@ import { Download, Printer, Users } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import { getConfiguracion } from "@/lib/config"
 import { supabase } from "@/lib/supabase"
-import { generarBoletinPDF } from "@/lib/pdf/index"
+import { generarBoletinPDF, generarTodosBoletinesPDF } from "@/lib/pdf/index"
 import { getEstadoNota } from "@/lib/utils"
 import type { Database } from "@/types/supabase"
 
@@ -246,7 +246,7 @@ export function BoletinNotas({ alumno, curso, materias, calificaciones, alumnos 
     setIsExporting(true)
 
     try {
-      const doc = await generarBoletinPDF(alumno, curso, materias, calificaciones, nombreInstitucion, logoUrl, areaMap)
+      const doc = await generarBoletinPDF(alumno, curso, materias, calificaciones, nombreInstitucion, areaMap)
       doc.save(`Boletin_${alumno.apellidos}_${alumno.nombres}.pdf`)
       toast({ title: "PDF generado", description: "El boletín se ha exportado correctamente." })
     } catch (error) {
@@ -271,30 +271,7 @@ export function BoletinNotas({ alumno, curso, materias, calificaciones, alumnos 
     setIsExportingAll(true)
 
     try {
-      const doc = await generarBoletinPDF(
-        alumnos[0],
-        curso,
-        materias,
-        calificaciones,
-        nombreInstitucion,
-        logoUrl,
-        areaMap,
-      )
-
-      // Generar boletín para el resto de alumnos
-      for (let i = 1; i < alumnos.length; i++) {
-        await generarBoletinPDF(
-          alumnos[i],
-          curso,
-          materias,
-          calificaciones,
-          nombreInstitucion,
-          logoUrl,
-          areaMap,
-          doc,
-          true, // Añadir salto de página
-        )
-      }
+      const doc = await generarTodosBoletinesPDF(alumnos, curso, materias, calificaciones, nombreInstitucion, areaMap)
 
       // Guardar el documento combinado
       doc.save(`Boletines_${curso.nombre_corto}.pdf`)
@@ -304,7 +281,7 @@ export function BoletinNotas({ alumno, curso, materias, calificaciones, alumnos 
         description: `Se han generado ${alumnos.length} boletines en un solo documento.`,
       })
     } catch (error) {
-      console.error("Error al generar PDF combinado:", error)
+      console.error("Error al generar todos los boletines:", error)
       toast({
         variant: "destructive",
         title: "Error",

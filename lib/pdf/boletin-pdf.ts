@@ -1,7 +1,7 @@
-import type { jsPDF } from "jspdf"
+import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
 import { getEstiloNotaPDF } from "@/lib/utils"
-import { configurarDocumentoPDF } from "./utils/pdf-utils"
+import type { Database } from "@/types/supabase"
 import { supabase } from "@/lib/supabase"
 
 // Tipos
@@ -30,7 +30,7 @@ export async function generarBoletinPDF(
   addPageBreak = true,
 ): Promise<jsPDF> {
   // Crear un nuevo documento si no se proporciona uno
-  const pdfDoc = doc || configurarDocumentoPDF({ format: "letter" })
+  const pdfDoc = doc || new jsPDF({ format: "letter", orientation: "portrait" })
 
   // Si estamos añadiendo a un documento existente y se solicita un salto de página
   if (doc && addPageBreak) {
@@ -131,11 +131,12 @@ export async function generarBoletinPDF(
     }
   }
 
-  // Añadir logo si existe
+// Añadir logo si existe
   try {
+   // Obtener la URL del logo desde la configuración
     const { data: configData } = await supabase.from("configuracion").select("logo_url").eq("id", 1).single()
     const logoUrl = configData?.logo_url || null
-  
+
     const img = await cargarLogo(logoUrl)
     if (img) {
       // Calcular dimensiones para mantener proporción
@@ -151,9 +152,10 @@ export async function generarBoletinPDF(
     console.error("Error al añadir el logo al PDF de boletín:", error)
   }
 
+
   // Título y encabezado
   pdfDoc.setFontSize(16)
-  pdfDoc.text("Boletín de Calificaciones", 120, 13, { align: "center", fontStyle: "bold" })
+  pdfDoc.text("Boletín de Calificaciones", 120, 13, { align: "center" })
   pdfDoc.setFontSize(14)
   pdfDoc.text("1er Trimestre", 120, 19, { align: "center" })
   pdfDoc.setFontSize(12)
@@ -171,13 +173,13 @@ export async function generarBoletinPDF(
 
   // Información del alumno y curso
   pdfDoc.setFontSize(11)
-  pdfDoc.text(`Alumno:`, 15, 35, { fontStyle: "bold" })
+  pdfDoc.text(`Alumno:`, 15, 35)
   pdfDoc.text(`${alumno.apellidos}, ${alumno.nombres}`, 35, 35)
-  pdfDoc.text(`Curso:`, 15, 40, { fontStyle: "bold" })
+  pdfDoc.text(`Curso:`, 15, 40)
   pdfDoc.text(`${curso?.nombre_largo || ""}`, 35, 40)
 
   // Pie de página con firmas
-  const pageHeight = pdfDoc.internal.pageSize.getHeight()
+  const pageHeight = pdfDoc.internal.pageSize.height
   pdfDoc.setLineWidth(0.5)
   pdfDoc.line(40, pageHeight - 40, 80, pageHeight - 40) // Línea para firma del director
   pdfDoc.line(120, pageHeight - 40, 160, pageHeight - 40) // Línea para firma del padre/apoderado
