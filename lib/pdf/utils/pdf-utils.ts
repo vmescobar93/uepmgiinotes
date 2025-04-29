@@ -15,29 +15,16 @@ export async function cargarLogo(logoUrl: string | null): Promise<HTMLImageEleme
       if (!logoUrl) return null
     }
 
-    // Asegurarse de que la URL sea absoluta
-    if (!logoUrl.startsWith("http")) {
-      console.error("URL del logo no es absoluta:", logoUrl)
-      return null
-    }
+    const img = new Image()
+    img.crossOrigin = "anonymous"
 
-    return new Promise((resolve, reject) => {
-      const img = new Image()
-      img.crossOrigin = "anonymous"
-
-      img.onload = () => {
-        console.log("Logo cargado correctamente:", logoUrl)
-        resolve(img)
-      }
-
-      img.onerror = (e) => {
-        console.error("Error al cargar el logo:", e)
-        reject(new Error(`No se pudo cargar el logo desde ${logoUrl}`))
-      }
-
-      // Añadir un parámetro de caché para evitar problemas de caché
-      img.src = `${logoUrl}?t=${new Date().getTime()}`
+    await new Promise((resolve, reject) => {
+      img.onload = resolve
+      img.onerror = reject
+      img.src = logoUrl as string
     })
+
+    return img
   } catch (error) {
     console.error("Error al cargar el logo:", error)
     return null
