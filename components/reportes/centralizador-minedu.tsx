@@ -7,7 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Download, Printer } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import { getConfiguracion } from "@/lib/config"
-import { generarCentralizadorMineduPDF } from "@/lib/pdf-generators"
+import { generarCentralizadorMineduPDF } from "@/lib/pdf"
 import { getEstadoNota } from "@/lib/utils"
 import type { Database } from "@/types/supabase"
 

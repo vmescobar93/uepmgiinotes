@@ -12,7 +12,7 @@ import { useToast } from "@/components/ui/use-toast"
 import { Loader2, Save } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import type { Database } from "@/types/supabase"
-import { PdfGenerator } from "@/components/PdfGenerator"
+import { CalificacionesReporte } from "@/components/reportes/calificaciones"
 
 type Alumno = Database["public"]["Tables"]["alumnos"]["Row"]
 type Materia = Database["public"]["Tables"]["materias"]["Row"]
@@ -345,7 +345,7 @@ export default function CalificacionesPage() {
                   </Table>
                 </div>
                 <div className="flex justify-between items-center">
-                  <PdfGenerator
+                  <CalificacionesReporte
                     profesores={profesores}
                     materias={materias}
                     alumnos={alumnos}

@@ -14,7 +14,7 @@ import { CentralizadorInterno } from "@/components/reportes/centralizador-intern
 import { CentralizadorMinedu } from "@/components/reportes/centralizador-minedu"
 import { BoletinNotas } from "@/components/reportes/boletin-notas"
 import { RankingAlumnos } from "@/components/reportes/ranking-alumnos"
-import { generarTodosBoletinesPDF } from "@/lib/pdf-generators"
+import { generarTodosBoletinesPDF } from "@/lib/pdf/index"
 import type { Database } from "@/types/supabase"
 import { getConfiguracion } from "@/lib/config"
 

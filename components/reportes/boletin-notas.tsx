@@ -8,7 +8,7 @@ import { Download, Printer, Users } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import { getConfiguracion } from "@/lib/config"
 import { supabase } from "@/lib/supabase"
-import { generarBoletinPDF } from "@/lib/pdf-generators"
+import { generarBoletinPDF } from "@/lib/pdf/index"
 import { getEstadoNota } from "@/lib/utils"
 import type { Database } from "@/types/supabase"
 
