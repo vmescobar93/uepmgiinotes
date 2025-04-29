@@ -1,7 +1,7 @@
 import type { jsPDF } from "jspdf"
 import autoTable from "jspdf-autotable"
 import { getEstiloNotaPDF } from "@/lib/utils"
-import { cargarLogo, configurarDocumentoPDF } from "./utils/pdf-utils"
+import { configurarDocumentoPDF } from "./utils/pdf-utils"
 import { supabase } from "@/lib/supabase"
 
 // Tipos

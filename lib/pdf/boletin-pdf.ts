@@ -1,8 +1,8 @@
 import type { jsPDF } from "jspdf"
 import autoTable from "jspdf-autotable"
 import { getEstiloNotaPDF } from "@/lib/utils"
-import { cargarLogo, configurarDocumentoPDF } from "./utils/pdf-utils"
-import type { Database } from "@/types/supabase"
+import { configurarDocumentoPDF } from "./utils/pdf-utils"
+import { supabase } from "@/lib/supabase"
 
 // Tipos
 type Alumno = Database["public"]["Tables"]["alumnos"]["Row"]
@@ -25,7 +25,6 @@ export async function generarBoletinPDF(
   materias: Materia[],
   calificaciones: CalificacionesTrimestres,
   nombreInstitucion: string,
-  logoUrl: string | null,
   areaMap: Record<string, string>,
   doc?: jsPDF,
   addPageBreak = true,
@@ -111,6 +110,9 @@ export async function generarBoletinPDF(
 
   // Añadir logo si existe
   try {
+    const { data: configData } = await supabase.from("configuracion").select("logo_url").eq("id", 1).single()
+    const logoUrl = configData?.logo_url || null
+  
     const img = await cargarLogo(logoUrl)
     if (img) {
       // Calcular dimensiones para mantener proporción

@@ -1,6 +1,6 @@
 import type { jsPDF } from "jspdf"
 import { generarBoletinPDF } from "./boletin-pdf"
-import type { Database } from "@/types/supabase"
+import { supabase } from "@/lib/supabase"
 
 // Tipos
 type Alumno = Database["public"]["Tables"]["alumnos"]["Row"]
@@ -22,7 +22,6 @@ export async function generarTodosBoletinesPDF(
   materias: Materia[],
   calificaciones: CalificacionesTrimestres,
   nombreInstitucion: string,
-  logoUrl: string | null,
   areaMap: Record<string, string>,
 ): Promise<jsPDF> {
   if (alumnos.length === 0) {
@@ -40,7 +39,6 @@ export async function generarTodosBoletinesPDF(
       materias,
       calificaciones,
       nombreInstitucion,
-      logoUrl,
       areaMap,
       doc,
       true, // Añadir salto de página

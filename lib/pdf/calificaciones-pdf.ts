@@ -67,30 +67,6 @@ export async function generarCalificacionesPDF({
   const width = doc.internal.pageSize.getWidth()
   const height = doc.internal.pageSize.getHeight()
 
-  // Función para cargar el logo desde la URL
-  async function cargarLogo(logoUrl: string | null): Promise<HTMLImageElement | null> {
-    if (!logoUrl) {
-      console.warn("No se proporcionó una URL de logo.")
-      return null
-    }
-
-    try {
-      const img = new Image()
-      img.crossOrigin = "anonymous"
-
-      await new Promise((resolve, reject) => {
-        img.onload = () => resolve(img)
-        img.onerror = reject
-        img.src = logoUrl
-      })
-
-      return img
-    } catch (error) {
-      console.error("Error al cargar el logo:", error)
-      return null
-    }
-  }
-
   // Añadir logo si existe
   try {
     // Obtener la URL del logo desde la configuración
