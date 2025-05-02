@@ -3,7 +3,7 @@ import { generarBoletinPDF } from "./boletin-pdf"
 import { generarTodosBoletinesPDF } from "./boletines-pdf"
 import { generarCentralizadorInternoPDF } from "./centralizador-pdf"
 import { generarCentralizadorMineduPDF } from "./centralizador-minedu-pdf"
-import { generarCalificacionesPDF } from "./calificaciones-pdf"
+import { generarCalificacionesPDF, generarTodasCalificacionesPDF } from "./calificaciones-pdf"
 import { generarRankingPDF } from "./ranking-pdf"
 
 // Exportar todas las funciones
@@ -13,5 +13,6 @@ export {
   generarCentralizadorInternoPDF,
   generarCentralizadorMineduPDF,
   generarCalificacionesPDF,
+  generarTodasCalificacionesPDF,
   generarRankingPDF,
 }

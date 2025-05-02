@@ -13,6 +13,7 @@ import { Loader2, Save } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import type { Database } from "@/types/supabase"
 import { CalificacionesReporte } from "@/components/reportes/calificaciones"
+import { TodasCalificacionesReporte } from "@/components/reportes/todas-calificaciones"
 
 type Alumno = Database["public"]["Tables"]["alumnos"]["Row"]
 type Materia = Database["public"]["Tables"]["materias"]["Row"]
@@ -237,6 +238,10 @@ export default function CalificacionesPage() {
     }
   }
 
+  // Obtener el nombre del profesor seleccionado
+  const profesorSeleccionado = profesores.find((p) => p.cod_moodle === selectedProfesor)
+  const nombreProfesor = profesorSeleccionado ? `${profesorSeleccionado.apellidos}, ${profesorSeleccionado.nombre}` : ""
+
   return (
     <MainLayout>
       <div className="space-y-6">
@@ -304,6 +309,13 @@ export default function CalificacionesPage() {
                 </Select>
               </div>
             </div>
+
+            {/* Botón para exportar todas las calificaciones */}
+            {selectedProfesor && (
+              <div className="flex justify-end">
+                <TodasCalificacionesReporte selectedProfesor={selectedProfesor} profesorNombre={nombreProfesor} />
+              </div>
+            )}
 
             {/* Tabla y acciones */}
             {isLoading ? (
