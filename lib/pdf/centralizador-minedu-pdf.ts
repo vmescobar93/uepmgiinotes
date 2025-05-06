@@ -75,9 +75,22 @@ export async function generarCentralizadorMineduPDF(
   // Título
   const trimestreTexto = trimestre === "1" ? "1er" : trimestre === "2" ? "2do" : "3er"
   doc.setFontSize(16)
-  doc.text(`Centralizador MINEDU`, 180, 15, { align: "center" })
+  doc.text(`Centralizador MINEDU`, 160, 15, { align: "center" })
   doc.setFontSize(14)
-  doc.text(`${trimestreTexto} Trimestre`, 180, 22, { align: "center" })
+  doc.text(`${trimestreTexto} Trimestre`, 160, 22, { align: "center" })
+
+  doc.setFontSize(10)
+  doc.text("Leyenda de calificaciones:", 260, 15, { align: "right" })
+
+  doc.setFontSize(9)
+  doc.setTextColor(255, 0, 0)
+  doc.text("0-49: Reprobado", 260, 20, { align: "right" })
+
+  doc.setTextColor(245, 158, 11)
+  doc.text("50: No Concluyente", 260, 25, { align: "right" })
+
+  doc.setTextColor(0, 0, 0)
+  doc.text("51-100: Aprobado", 260, 30, { align: "right" })
 
   // Información del curso
   doc.setFontSize(12)
@@ -263,54 +276,26 @@ export async function generarCentralizadorMineduPDF(
   })
 
   // Leyenda de agrupaciones
-  if (Object.keys(grupos).length > 0) {
-    const startY = (doc as any).lastAutoTable.finalY + 10
-    doc.setFontSize(10)
-    doc.text("Leyenda de agrupaciones:", 15, startY)
 
-    let y = startY + 5
-    Object.values(grupos).forEach((grupo) => {
-      // Obtener el nombre de la materia a partir del código
-      const getNombreMateria = (codigo: string): string => {
-        const materia = materias.find((m) => m.codigo === codigo)
-        return materia ? materia.nombre_corto : codigo
-      }
+  const startY = (doc as any).lastAutoTable.finalY + 10
+  doc.setFontSize(10)
+  doc.text("Leyenda de agrupaciones:", 15, startY)
 
-      const text = `${grupo.nombre_grupo} (${grupo.nombre_mostrar}): ${grupo.materias.map(getNombreMateria).join(", ")}`
-      doc.setFontSize(8)
-      doc.text(text, 20, y)
-      y += 4
-    })
+  let y = startY + 5
+  Object.values(grupos).forEach((grupo) => {
+    // Obtener el nombre de la materia a partir del código
+    const getNombreMateria = (codigo: string): string => {
+      const materia = materias.find((m) => m.codigo === codigo)
+      return materia ? materia.nombre_corto : codigo
+    }
 
-    // Agregar leyenda de colores
-    doc.setFontSize(10)
-    doc.text("Leyenda de calificaciones:", 15, y + 5)
+    const text = `${grupo.nombre_grupo} (${grupo.nombre_mostrar}): ${grupo.materias.map(getNombreMateria).join(", ")}`
+    doc.setFontSize(8)
+    doc.text(text, 20, y)
+    y += 4
+  })
 
-    doc.setFontSize(9)
-    doc.setTextColor(255, 0, 0)
-    doc.text("0-49: Reprobado", 20, y + 10)
 
-    doc.setTextColor(245, 158, 11)
-    doc.text("50: No Concluyente", 20, y + 15)
-
-    doc.setTextColor(0, 0, 0)
-    doc.text("51-100: Aprobado", 20, y + 20)
-  } else {
-    // Si no hay agrupaciones, solo agregar leyenda de colores
-    const startY = (doc as any).lastAutoTable.finalY + 10
-    doc.setFontSize(10)
-    doc.text("Leyenda de calificaciones:", 15, startY)
-
-    doc.setFontSize(9)
-    doc.setTextColor(255, 0, 0)
-    doc.text("0-49: Reprobado", 20, startY + 5)
-
-    doc.setTextColor(245, 158, 11)
-    doc.text("50: No Concluyente", 20, startY + 10)
-
-    doc.setTextColor(0, 0, 0)
-    doc.text("51-100: Aprobado", 20, startY + 15)
-  }
 
   // Pie de página
   const pageCount = doc.getNumberOfPages()

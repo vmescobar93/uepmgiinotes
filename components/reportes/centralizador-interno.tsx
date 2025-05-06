@@ -37,6 +37,17 @@ function NotaConEstado({ nota }: { nota: number | null }) {
   )
 }
 
+// Interfaz para las estadísticas por materia
+interface EstadisticasMateria {
+  materiaId: string
+  nombreMateria: string
+  aprobados: number
+  porcentajeAprobados: number
+  reprobados: number
+  porcentajeReprobados: number
+  promedio: number
+}
+
 export function CentralizadorInterno({
   curso,
   alumnos,
@@ -50,6 +61,7 @@ export function CentralizadorInterno({
   const [nombreInstitucion, setNombreInstitucion] = useState("U.E. Plena María Goretti II")
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
   const [materiasOrdenadas, setMateriasOrdenadas] = useState<Materia[]>([])
+  const [estadisticasPorMateria, setEstadisticasPorMateria] = useState<EstadisticasMateria[]>([])
 
   // Cargar configuración
   useEffect(() => {
@@ -91,6 +103,48 @@ export function CentralizadorInterno({
     return Math.round((suma / notasAlumno.length) * 100) / 100
   }
 
+  // Calcular estadísticas por materia
+  useEffect(() => {
+    if (materiasOrdenadas.length === 0 || alumnos.length === 0) {
+      setEstadisticasPorMateria([])
+      return
+    }
+
+    const estadisticas = materiasOrdenadas.map((materia) => {
+      // Obtener todas las notas para esta materia
+      const notasMateria = alumnos
+        .map((alumno) => getCalificacion(alumno.cod_moodle, materia.codigo))
+        .filter((nota): nota is number => nota !== null)
+
+      // Contar aprobados y reprobados
+      const aprobados = notasMateria.filter((nota) => nota >= 51).length
+      const reprobados = notasMateria.filter((nota) => nota < 51).length
+
+      // Calcular porcentajes
+      const totalConNota = notasMateria.length
+      const porcentajeAprobados = totalConNota > 0 ? (aprobados / totalConNota) * 100 : 0
+      const porcentajeReprobados = totalConNota > 0 ? (reprobados / totalConNota) * 100 : 0
+
+      // Calcular promedio
+      const promedio =
+        totalConNota > 0
+          ? Math.round((notasMateria.reduce((acc, nota) => acc + nota, 0) / totalConNota) * 100) / 100
+          : 0
+
+      return {
+        materiaId: materia.codigo,
+        nombreMateria: materia.nombre_corto,
+        aprobados,
+        porcentajeAprobados,
+        reprobados,
+        porcentajeReprobados,
+        promedio,
+      }
+    })
+
+    setEstadisticasPorMateria(estadisticas)
+  }, [materiasOrdenadas, alumnos, calificaciones])
+
   // Exportar a PDF
   const exportarPDF = async () => {
     setIsExporting(true)
@@ -104,6 +158,7 @@ export function CentralizadorInterno({
         trimestre,
         nombreInstitucion,
         logoUrl,
+        estadisticasPorMateria,
       )
 
       // Guardar PDF
@@ -219,6 +274,72 @@ export function CentralizadorInterno({
               )}
             </TableBody>
           </Table>
+        </div>
+
+        {/* Tabla de estadísticas por materia */}
+        <div className="mt-8">
+          <h3 className="font-semibold mb-4">Estadísticas por Materia</h3>
+          <div className="rounded-md border overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-40">Estadística</TableHead>
+                  {materiasOrdenadas.map((materia) => (
+                    <TableHead key={materia.codigo} className="text-center whitespace-nowrap">
+                      {materia.nombre_corto}
+                    </TableHead>
+                  ))}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {/* Fila de Aprobados */}
+                <TableRow>
+                  <TableCell className="font-medium">Aprobados</TableCell>
+                  {estadisticasPorMateria.map((est) => (
+                    <TableCell key={`aprobados-${est.materiaId}`} className="text-center">
+                      {est.aprobados}
+                    </TableCell>
+                  ))}
+                </TableRow>
+                {/* Fila de % Aprobados */}
+                <TableRow>
+                  <TableCell className="font-medium">% Aprobados</TableCell>
+                  {estadisticasPorMateria.map((est) => (
+                    <TableCell key={`pct-aprobados-${est.materiaId}`} className="text-center">
+                      {est.porcentajeAprobados.toFixed(2)}%
+                    </TableCell>
+                  ))}
+                </TableRow>
+                {/* Fila de Reprobados */}
+                <TableRow>
+                  <TableCell className="font-medium">Reprobados</TableCell>
+                  {estadisticasPorMateria.map((est) => (
+                    <TableCell key={`reprobados-${est.materiaId}`} className="text-center">
+                      {est.reprobados}
+                    </TableCell>
+                  ))}
+                </TableRow>
+                {/* Fila de % Reprobados */}
+                <TableRow>
+                  <TableCell className="font-medium">% Reprobados</TableCell>
+                  {estadisticasPorMateria.map((est) => (
+                    <TableCell key={`pct-reprobados-${est.materiaId}`} className="text-center">
+                      {est.porcentajeReprobados.toFixed(2)}%
+                    </TableCell>
+                  ))}
+                </TableRow>
+                {/* Fila de Promedio */}
+                <TableRow>
+                  <TableCell className="font-medium">Promedio</TableCell>
+                  {estadisticasPorMateria.map((est) => (
+                    <TableCell key={`promedio-${est.materiaId}`} className="text-center">
+                      <NotaConEstado nota={est.promedio} />
+                    </TableCell>
+                  ))}
+                </TableRow>
+              </TableBody>
+            </Table>
+          </div>
         </div>
 
         {/* Leyenda de colores */}

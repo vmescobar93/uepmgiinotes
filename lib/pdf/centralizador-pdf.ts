@@ -3,12 +3,24 @@ import autoTable from "jspdf-autotable"
 import { getEstiloNotaPDF } from "@/lib/utils"
 import { configurarDocumentoPDF } from "./utils/pdf-utils"
 import { supabase } from "@/lib/supabase"
+import type { Database } from "@/types/supabase"
 
 // Tipos
 type Curso = Database["public"]["Tables"]["cursos"]["Row"]
 type Alumno = Database["public"]["Tables"]["alumnos"]["Row"]
 type Materia = Database["public"]["Tables"]["materias"]["Row"]
 type Calificacion = Database["public"]["Tables"]["calificaciones"]["Row"]
+
+// Interfaz para las estadísticas por materia
+interface EstadisticasMateria {
+  materiaId: string
+  nombreMateria: string
+  aprobados: number
+  porcentajeAprobados: number
+  reprobados: number
+  porcentajeReprobados: number
+  promedio: number
+}
 
 /**
  * Genera un centralizador interno de calificaciones en PDF
@@ -20,7 +32,8 @@ export async function generarCentralizadorInternoPDF(
   calificaciones: Calificacion[],
   trimestre: string,
   nombreInstitucion: string,
-  //logoUrl: string | null,
+  logoUrl: string | null,
+  estadisticasPorMateria?: EstadisticasMateria[],
 ): Promise<jsPDF> {
   const doc = configurarDocumentoPDF({
     orientation: "landscape",
@@ -77,6 +90,20 @@ export async function generarCentralizadorInternoPDF(
   doc.text(`Centralizador de Calificaciones`, 180, 15, { align: "center" })
   doc.setFontSize(14)
   doc.text(`${trimestreTexto} Trimestre`, 180, 22, { align: "center" })
+
+  // Agregar leyenda de colores
+  doc.setFontSize(10)
+  doc.text("Leyenda de calificaciones:", 315, 15, { align: "right" })
+
+  doc.setFontSize(9)
+  doc.setTextColor(255, 0, 0)
+  doc.text("0-49,00: Reprobado", 315, 20, { align: "right" })
+
+  doc.setTextColor(245, 158, 11)
+  doc.text("49,01-50,99: No Concluyente", 315, 25, { align: "right" })
+
+  doc.setTextColor(0, 0, 0)
+  doc.text("51,00-100,00: Aprobado", 315, 30, { align: "right" })
 
   // Información del curso
   doc.setFontSize(12)
@@ -138,14 +165,15 @@ export async function generarCentralizadorInternoPDF(
 
   // Generar tabla
   autoTable(doc, {
+    margin: { left: 5, right: 5 },
     head,
     body,
     startY: 45,
     theme: "grid",
-    headStyles: { fillColor: [245, 166, 10], fontSize: 9, halign: "center" },
-    bodyStyles: { fontSize: 8, font: "helvetica" },
+    headStyles: { fillColor: [245, 166, 10], fontSize: 8, halign: "center" },
+    bodyStyles: { fontSize: 7.5, font: "helvetica" },
     columnStyles: {
-      0: { halign: "center", cellWidth: 10 },
+      0: { halign: "center", cellWidth: 8 },
     },
     didParseCell: (data) => {
       // Centrar todas las columnas de materias
@@ -199,20 +227,99 @@ export async function generarCentralizadorInternoPDF(
     },
   })
 
-  // Agregar leyenda de colores
-  const startY = (doc as any).lastAutoTable.finalY + 10
-  doc.setFontSize(10)
-  doc.text("Leyenda de calificaciones:", 15, startY)
+  // Si no hay estadísticas proporcionadas, calcularlas
+  let estadisticas = estadisticasPorMateria
+  if (!estadisticas) {
+    estadisticas = materiasOrdenadas.map((materia) => {
+      // Obtener todas las notas para esta materia
+      const notasMateria = alumnos
+        .map((alumno) => getCalificacion(alumno.cod_moodle, materia.codigo))
+        .filter((nota): nota is number => nota !== null)
 
-  doc.setFontSize(9)
-  doc.setTextColor(255, 0, 0)
-  doc.text("0-49,00: Reprobado", 20, startY + 5)
+      // Contar aprobados y reprobados
+      const aprobados = notasMateria.filter((nota) => nota >= 51).length
+      const reprobados = notasMateria.filter((nota) => nota < 51).length
 
-  doc.setTextColor(245, 158, 11)
-  doc.text("49,01-50,99: No Concluyente", 20, startY + 10)
+      // Calcular porcentajes
+      const totalConNota = notasMateria.length
+      const porcentajeAprobados = totalConNota > 0 ? (aprobados / totalConNota) * 100 : 0
+      const porcentajeReprobados = totalConNota > 0 ? (reprobados / totalConNota) * 100 : 0
 
+      // Calcular promedio
+      const promedio =
+        totalConNota > 0
+          ? Math.round((notasMateria.reduce((acc, nota) => acc + nota, 0) / totalConNota) * 100) / 100
+          : 0
+
+      return {
+        materiaId: materia.codigo,
+        nombreMateria: materia.nombre_corto,
+        aprobados,
+        porcentajeAprobados,
+        reprobados,
+        porcentajeReprobados,
+        promedio,
+      }
+    })
+  }
+
+  // Calcular la posición Y para la tabla de estadísticas
+  // Obtener la posición final de la tabla anterior
+  const finalY = (doc as any).lastAutoTable.finalY || 45
+  const startYEstadisticas = finalY + 20
+
+  // Título para la tabla de estadísticas
+  doc.setFontSize(12)
   doc.setTextColor(0, 0, 0)
-  doc.text("51,00-100,00: Aprobado", 20, startY + 15)
+  doc.text("Estadísticas por Materia", 15, startYEstadisticas - 10)
+
+  // Preparar datos para la tabla de estadísticas con materias como columnas
+  const headEstadisticas = [["Estadística", ...materiasOrdenadas.map((m) => m.nombre_corto)]]
+
+  // Crear filas para cada tipo de estadística
+  const rowAprobados = ["Aprobados"]
+  const rowPorcentajeAprobados = ["% Aprobados"]
+  const rowReprobados = ["Reprobados"]
+  const rowPorcentajeReprobados = ["% Reprobados"]
+  const rowPromedio = ["Promedio"]
+
+  // Llenar los datos para cada materia
+  estadisticas.forEach((est) => {
+    rowAprobados.push(est.aprobados.toString())
+    rowPorcentajeAprobados.push(est.porcentajeAprobados.toFixed(2) + "%")
+    rowReprobados.push(est.reprobados.toString())
+    rowPorcentajeReprobados.push(est.porcentajeReprobados.toFixed(2) + "%")
+    rowPromedio.push(est.promedio.toFixed(2))
+  })
+
+  const bodyEstadisticas = [rowAprobados, rowPorcentajeAprobados, rowReprobados, rowPorcentajeReprobados, rowPromedio]
+
+  // Generar tabla de estadísticas
+  autoTable(doc, {
+    margin: { left: 5, right: 5 },
+    head: headEstadisticas,
+    body: bodyEstadisticas,
+    startY: startYEstadisticas,
+    theme: "grid",
+    headStyles: { fillColor: [100, 100, 100], fontSize: 8, halign: "center" },
+    bodyStyles: { fontSize: 7.5, font: "helvetica" },
+    columnStyles: {
+      0: { halign: "left", fontStyle: "bold" },
+    },
+    didParseCell: (data) => {
+      // Aplicar colores al promedio en la última fila
+      if (data.row.index === 4 && data.column.index > 0 && data.section === "body") {
+        const valor = data.cell.text[0]
+        if (valor !== "-") {
+          const nota = Number.parseFloat(valor)
+          if (!isNaN(nota)) {
+            const estilos = getEstiloNotaPDF(nota, data.cell.styles)
+            Object.assign(data.cell.styles, estilos)
+          }
+        }
+      }
+    },
+  })
 
   // Pie de página
   const pageCount = doc.getNumberOfPages()
