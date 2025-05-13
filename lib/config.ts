@@ -4,6 +4,9 @@ export interface ConfiguracionSistema {
   id: number
   nombre_institucion: string
   logo_url: string | null
+  pie_pagina_url: string | null
+  pie_pagina_altura: number
+  pie_pagina_ajuste: string
 }
 
 export async function getConfiguracion(): Promise<ConfiguracionSistema> {
@@ -23,6 +26,9 @@ export async function getConfiguracion(): Promise<ConfiguracionSistema> {
       id: 1,
       nombre_institucion: "U.E. Plena María Goretti II",
       logo_url: null,
+      pie_pagina_url: null,
+      pie_pagina_altura: 80,
+      pie_pagina_ajuste: "proporcional",
     }
 
     try {
@@ -49,6 +55,9 @@ export async function getConfiguracion(): Promise<ConfiguracionSistema> {
       id: 1,
       nombre_institucion: "U.E. Plena María Goretti II",
       logo_url: null,
+      pie_pagina_url: null,
+      pie_pagina_altura: 80,
+      pie_pagina_ajuste: "proporcional",
     }
   }
 }

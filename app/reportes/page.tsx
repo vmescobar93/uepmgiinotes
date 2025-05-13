@@ -16,7 +16,6 @@ import { BoletinNotas } from "@/components/reportes/boletin-notas"
 import { RankingAlumnos } from "@/components/reportes/ranking-alumnos"
 import { generarTodosBoletinesPDF } from "@/lib/pdf/index"
 import type { Database } from "@/types/supabase"
-import { getConfiguracion } from "@/lib/config"
 
 type Curso = Database["public"]["Tables"]["cursos"]["Row"]
 type Alumno = Database["public"]["Tables"]["alumnos"]["Row"]
@@ -488,8 +487,11 @@ export default function ReportesPage() {
         trimestre3: calificacionesT3 || [],
       }
 
-      // Cargar configuración y áreas
-      const config = await getConfiguracion()
+      // Cargar configuración a través del endpoint de API
+      const configResponse = await fetch("/api/configuracion/get")
+      const config = await configResponse.json()
+
+      // Cargar áreas
       const { data: areasData } = await supabase.from("areas").select("id, nombre")
 
       // Crear mapa de áreas
@@ -503,6 +505,15 @@ export default function ReportesPage() {
       // Obtener el objeto del curso
       const cursoObj = cursos.find((c) => c.nombre_corto === selectedCurso)
 
+      // Configuración del pie de página
+      const piePaginaConfig = {
+        piePaginaUrl: config.pie_pagina_url,
+        piePaginaAltura: config.pie_pagina_altura || 80,
+        piePaginaAjuste: config.pie_pagina_ajuste || "proporcional",
+      }
+
+      console.log("Configuración del pie de página para todos los boletines:", piePaginaConfig)
+
       // Generar todos los boletines
       const doc = await generarTodosBoletinesPDF(
         alumnos,
@@ -510,8 +521,8 @@ export default function ReportesPage() {
         materiasData,
         todasCalificaciones,
         config.nombre_institucion,
-        config.logo_url,
         areaMap,
+        piePaginaConfig,
       )
 
       // Guardar el documento combinado

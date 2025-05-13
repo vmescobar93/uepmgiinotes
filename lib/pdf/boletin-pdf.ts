@@ -16,6 +16,12 @@ interface CalificacionesTrimestres {
   trimestre3: Calificacion[]
 }
 
+interface ConfiguracionPiePagina {
+  piePaginaUrl: string | null
+  piePaginaAltura: number
+  piePaginaAjuste: string
+}
+
 /**
  * Genera un boletín de calificaciones en PDF para un alumno específico
  */
@@ -26,6 +32,7 @@ export async function generarBoletinPDF(
   calificaciones: CalificacionesTrimestres,
   nombreInstitucion: string,
   areaMap: Record<string, string>,
+  piePaginaConfig?: ConfiguracionPiePagina | string | null,
   doc?: jsPDF,
   addPageBreak = true,
 ): Promise<jsPDF> {
@@ -35,6 +42,38 @@ export async function generarBoletinPDF(
   // Si estamos añadiendo a un documento existente y se solicita un salto de página
   if (doc && addPageBreak) {
     pdfDoc.addPage()
+  }
+
+  // Procesar la configuración del pie de página
+  let piePaginaUrl: string | null = null
+  let piePaginaAltura = 80
+  let piePaginaAjuste = "proporcional"
+
+  if (typeof piePaginaConfig === "string" || piePaginaConfig === null) {
+    piePaginaUrl = piePaginaConfig
+  } else if (piePaginaConfig && typeof piePaginaConfig === "object") {
+    piePaginaUrl = piePaginaConfig.piePaginaUrl
+    piePaginaAltura = piePaginaConfig.piePaginaAltura || 80
+    piePaginaAjuste = piePaginaConfig.piePaginaAjuste || "proporcional"
+  }
+
+  // Si no se proporciona configuración, intentar obtenerla de la base de datos
+  if (!piePaginaConfig) {
+    try {
+      const { data: configData } = await supabase
+        .from("configuracion")
+        .select("pie_pagina_url, pie_pagina_altura, pie_pagina_ajuste, logo_url")
+        .eq("id", 1)
+        .single()
+
+      if (configData) {
+        piePaginaUrl = configData.pie_pagina_url
+        piePaginaAltura = configData.pie_pagina_altura || 80
+        piePaginaAjuste = configData.pie_pagina_ajuste || "proporcional"
+      }
+    } catch (error) {
+      console.error("Error al obtener configuración del pie de página:", error)
+    }
   }
 
   // Funciones para calcular calificaciones
@@ -71,11 +110,42 @@ export async function generarBoletinPDF(
     return Math.round((proms.reduce((s, p) => s + p, 0) / proms.length) * 100) / 100
   }
 
+  // Verificar si el mapa de áreas está vacío y obtener áreas si es necesario
+  const areaMapActualizado = { ...areaMap }
+  if (Object.keys(areaMapActualizado).length === 0) {
+    try {
+      console.log("Cargando áreas para el PDF porque el mapa está vacío")
+      const { data: areasData } = await supabase.from("areas").select("id, nombre")
+      if (areasData && areasData.length > 0) {
+        areasData.forEach((area) => {
+          areaMapActualizado[area.id] = area.nombre
+        })
+      }
+    } catch (error) {
+      console.error("Error al cargar áreas para el PDF:", error)
+    }
+  }
+
+  // Imprimir el mapa de áreas para depuración
+  console.log("Mapa de áreas para el PDF:", areaMapActualizado)
+
+  // Imprimir las materias y sus áreas para depuración
+  materias.forEach((m) => {
+    console.log(
+      `Materia: ${m.nombre_largo}, ID Área: ${m.id_area}, Nombre Área: ${m.id_area ? areaMapActualizado[m.id_area] || "No encontrada" : "Sin área asignada"}`,
+    )
+  })
+
   // Agrupar materias por área
-  const materiasConArea = materias.map((m) => ({
-    ...m,
-    areaNombre: m.id_area && areaMap[m.id_area] ? areaMap[m.id_area] : "Sin área",
-  }))
+  const materiasConArea = materias.map((m) => {
+    // Verificar si la materia tiene un id_area y si ese id existe en el mapa
+    const areaNombre = m.id_area && areaMapActualizado[m.id_area] ? areaMapActualizado[m.id_area] : "Sin área"
+
+    return {
+      ...m,
+      areaNombre,
+    }
+  })
 
   // Ordenar por área y luego por orden
   const ordenadas = [...materiasConArea].sort((a, b) => {
@@ -108,9 +178,9 @@ export async function generarBoletinPDF(
     materiasAgrupadas[areaId].materias.push(materia)
   })
 
-  async function cargarLogo(logoUrl: string | null): Promise<HTMLImageElement | null> {
-    if (!logoUrl) {
-      console.warn("No se proporcionó una URL de logo.")
+  async function cargarImagen(url: string | null): Promise<HTMLImageElement | null> {
+    if (!url) {
+      console.warn("No se proporcionó una URL de imagen.")
       return null
     }
 
@@ -121,12 +191,12 @@ export async function generarBoletinPDF(
       await new Promise((resolve, reject) => {
         img.onload = () => resolve(img)
         img.onerror = reject
-        img.src = logoUrl
+        img.src = url
       })
 
       return img
     } catch (error) {
-      console.error("Error al cargar el logo:", error)
+      console.error("Error al cargar la imagen:", error)
       return null
     }
   }
@@ -137,16 +207,22 @@ export async function generarBoletinPDF(
     const { data: configData } = await supabase.from("configuracion").select("logo_url").eq("id", 1).single()
     const logoUrl = configData?.logo_url || null
 
-    const img = await cargarLogo(logoUrl)
-    if (img) {
-      // Calcular dimensiones para mantener proporción
-      const imgWidth = 70
-      const imgHeight = (img.height * imgWidth) / img.width
+    console.log("URL del logo:", logoUrl)
 
-      console.log("Añadiendo logo al PDF de boletín:", imgWidth, imgHeight)
-      pdfDoc.addImage(img, "JPEG", 10, 10, imgWidth, imgHeight)
+    if (logoUrl) {
+      const img = await cargarImagen(logoUrl)
+      if (img) {
+        // Calcular dimensiones para mantener proporción
+        const imgWidth = 70
+        const imgHeight = (img.height * imgWidth) / img.width
+
+        console.log("Añadiendo logo al PDF de boletín:", imgWidth, imgHeight)
+        pdfDoc.addImage(img, "JPEG", 10, 10, imgWidth, imgHeight)
+      } else {
+        console.warn("No se pudo cargar el logo para el boletín")
+      }
     } else {
-      console.warn("No se pudo cargar el logo para el boletín")
+      console.warn("No hay URL de logo disponible")
     }
   } catch (error) {
     console.error("Error al añadir el logo al PDF de boletín:", error)
@@ -156,9 +232,9 @@ export async function generarBoletinPDF(
   pdfDoc.setFontSize(16)
   pdfDoc.text("Boletín de Calificaciones", 120, 13, { align: "center" })
   pdfDoc.setFontSize(14)
-  pdfDoc.text("1er Trimestre", 120, 19, { align: "center" })
+  pdfDoc.text(nombreInstitucion, 120, 20, { align: "center" })
   pdfDoc.setFontSize(12)
-  pdfDoc.text(`${new Date().toLocaleDateString("es-ES")}`, 120, 25, { align: "center" })
+  pdfDoc.text(`${new Date().toLocaleDateString("es-ES")}`, 120, 27, { align: "center" })
 
   // Agregar leyenda de colores
   pdfDoc.setFontSize(9)
@@ -176,16 +252,6 @@ export async function generarBoletinPDF(
   pdfDoc.text(`${alumno.apellidos}, ${alumno.nombres}`, 35, 35)
   pdfDoc.text(`Curso:`, 15, 40)
   pdfDoc.text(`${curso?.nombre_largo || ""}`, 35, 40)
-
-  // Pie de página con firmas
-  const pageHeight = pdfDoc.internal.pageSize.height
-  pdfDoc.setLineWidth(0.5)
-  pdfDoc.line(40, pageHeight - 40, 80, pageHeight - 40) // Línea para firma del director
-  pdfDoc.line(120, pageHeight - 40, 160, pageHeight - 40) // Línea para firma del padre/apoderado
-
-  pdfDoc.setFontSize(10)
-  pdfDoc.text("Director/a", 60, pageHeight - 35, { align: "center" })
-  pdfDoc.text("Padre o Apoderado", 140, pageHeight - 35, { align: "center" })
 
   // Preparar datos para la tabla
   const head = [["Área", "Materia", "1er Trimestre", "2do Trimestre", "3er Trimestre", "Promedio Anual"]]
@@ -272,6 +338,119 @@ export async function generarBoletinPDF(
       }
     },
   })
+
+  // Obtener la posición final de la tabla
+  const finalY = (pdfDoc as any).lastAutoTable.finalY || pdfDoc.internal.pageSize.height - 60
+
+  // Añadir pie de página con imagen si existe, o líneas de firma si no
+  if (piePaginaUrl) {
+    try {
+      // Cargar la imagen del pie de página
+      const piePaginaImg = await cargarImagen(piePaginaUrl)
+      if (piePaginaImg) {
+        // Obtener dimensiones de la página
+        const pageWidth = pdfDoc.internal.pageSize.width // Ancho de la página en puntos
+        const margin = 15 // Reducir el margen a cada lado en puntos
+        const availableWidth = pageWidth - 2 * margin // Ancho disponible para la imagen
+
+        console.log(
+          `Aplicando ajuste: ${piePaginaAjuste}, altura: ${piePaginaAltura}px, ancho disponible: ${availableWidth}pt`,
+        )
+        console.log(`Dimensiones originales de la imagen: ${piePaginaImg.width}x${piePaginaImg.height}px`)
+        console.log(`Dimensiones de página: ancho=${pageWidth}pt, alto=${pdfDoc.internal.pageSize.height}pt`)
+
+        let imgWidth, imgHeight
+
+        switch (piePaginaAjuste) {
+          case "altura_fija":
+            // Altura fija, ancho proporcional
+            imgHeight = piePaginaAltura
+            imgWidth = (piePaginaImg.width * imgHeight) / piePaginaImg.height
+
+            // Si el ancho calculado es mayor que el disponible, ajustar
+            if (imgWidth > availableWidth) {
+              imgWidth = availableWidth
+              imgHeight = (piePaginaImg.height * imgWidth) / piePaginaImg.width
+            }
+
+            // Centrar horizontalmente
+            const leftMargin = (pageWidth - imgWidth) / 2
+            pdfDoc.addImage(piePaginaImg, "JPEG", leftMargin, finalY + 20, imgWidth, imgHeight)
+            break
+
+          case "ancho_completo":
+            // Ancho completo, altura proporcional
+            imgWidth = availableWidth
+            imgHeight = (piePaginaImg.height * imgWidth) / piePaginaImg.width
+
+            // Verificar que la altura no sea excesiva, pero permitir crecer hasta el máximo
+            // Aumentamos el máximo para imágenes de ancho completo
+            const maxHeight = 250 // Aumentamos el límite para imágenes de ancho completo
+            if (imgHeight > maxHeight) {
+              imgHeight = maxHeight
+              // No ajustamos el ancho para mantener el ancho completo
+            }
+
+            console.log(`Ancho completo - Final: ancho=${imgWidth}pt, alto=${imgHeight}pt, max altura=${maxHeight}pt`)
+            pdfDoc.addImage(piePaginaImg, "JPEG", margin, finalY + 20, imgWidth, imgHeight)
+            break
+
+          case "proporcional":
+          default:
+            // Proporcional con altura máxima
+            imgHeight = piePaginaAltura
+            imgWidth = (piePaginaImg.width * imgHeight) / piePaginaImg.height
+
+            // Si el ancho es mayor que el ancho disponible, ajustar
+            if (imgWidth > availableWidth) {
+              imgWidth = availableWidth
+              imgHeight = (piePaginaImg.height * imgWidth) / piePaginaImg.width
+            }
+
+            // Centrar horizontalmente
+            const leftPos = (pageWidth - imgWidth) / 2
+            pdfDoc.addImage(piePaginaImg, "JPEG", leftPos, finalY + 20, imgWidth, imgHeight)
+            break
+        }
+
+        console.log(
+          `Imagen de pie de página añadida con ajuste: ${piePaginaAjuste}, altura final: ${imgHeight}pt, ancho final: ${imgWidth}pt, escala: ${(imgWidth / piePaginaImg.width).toFixed(2)}x`,
+        )
+      } else {
+        console.warn("No se pudo cargar la imagen del pie de página, usando líneas de firma")
+        // Usar líneas de firma como fallback
+        const pageHeight = pdfDoc.internal.pageSize.height
+        pdfDoc.setLineWidth(0.5)
+        pdfDoc.line(40, pageHeight - 40, 80, pageHeight - 40) // Línea para firma del director
+        pdfDoc.line(120, pageHeight - 40, 160, pageHeight - 40) // Línea para firma del padre/apoderado
+
+        pdfDoc.setFontSize(10)
+        pdfDoc.text("Director/a", 60, pageHeight - 35, { align: "center" })
+        pdfDoc.text("Padre o Apoderado", 140, pageHeight - 35, { align: "center" })
+      }
+    } catch (error) {
+      console.error("Error al añadir la imagen del pie de página:", error)
+      // Usar líneas de firma como fallback
+      const pageHeight = pdfDoc.internal.pageSize.height
+      pdfDoc.setLineWidth(0.5)
+      pdfDoc.line(40, pageHeight - 40, 80, pageHeight - 40) // Línea para firma del director
+      pdfDoc.line(120, pageHeight - 40, 160, pageHeight - 40) // Línea para firma del padre/apoderado
+
+      pdfDoc.setFontSize(10)
+      pdfDoc.text("Director/a", 60, pageHeight - 35, { align: "center" })
+      pdfDoc.text("Padre o Apoderado", 140, pageHeight - 35, { align: "center" })
+    }
+  } else {
+    // Usar líneas de firma tradicionales
+    const pageHeight = pdfDoc.internal.pageSize.height
+    pdfDoc.setLineWidth(0.5)
+    pdfDoc.line(40, pageHeight - 40, 80, pageHeight - 40) // Línea para firma del director
+    pdfDoc.line(120, pageHeight - 40, 160, pageHeight - 40) // Línea para firma del padre/apoderado
+
+    pdfDoc.setFontSize(10)
+    pdfDoc.text("Director/a", 60, pageHeight - 35, { align: "center" })
+    pdfDoc.text("Padre o Apoderado", 140, pageHeight - 35, { align: "center" })
+  }
 
   return pdfDoc
 }

@@ -62,6 +62,7 @@ export function CentralizadorInterno({
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
   const [materiasOrdenadas, setMateriasOrdenadas] = useState<Materia[]>([])
   const [estadisticasPorMateria, setEstadisticasPorMateria] = useState<EstadisticasMateria[]>([])
+  const [promedioGeneral, setPromedioGeneral] = useState<number>(0)
 
   // Cargar configuración
   useEffect(() => {
@@ -103,10 +104,11 @@ export function CentralizadorInterno({
     return Math.round((suma / notasAlumno.length) * 100) / 100
   }
 
-  // Calcular estadísticas por materia
+  // Calcular estadísticas por materia y promedio general
   useEffect(() => {
     if (materiasOrdenadas.length === 0 || alumnos.length === 0) {
       setEstadisticasPorMateria([])
+      setPromedioGeneral(0)
       return
     }
 
@@ -143,6 +145,13 @@ export function CentralizadorInterno({
     })
 
     setEstadisticasPorMateria(estadisticas)
+
+    // Calcular promedio general
+    const promediosAlumnos = alumnos.map((alumno) => calcularPromedio(alumno.cod_moodle))
+    const sumaPromedios = promediosAlumnos.reduce((acc, promedio) => acc + promedio, 0)
+    const promGeneral =
+      promediosAlumnos.length > 0 ? Math.round((sumaPromedios / promediosAlumnos.length) * 100) / 100 : 0
+    setPromedioGeneral(promGeneral)
   }, [materiasOrdenadas, alumnos, calificaciones])
 
   // Exportar a PDF
@@ -159,6 +168,7 @@ export function CentralizadorInterno({
         nombreInstitucion,
         logoUrl,
         estadisticasPorMateria,
+        promedioGeneral,
       )
 
       // Guardar PDF
@@ -276,70 +286,84 @@ export function CentralizadorInterno({
           </Table>
         </div>
 
-        {/* Tabla de estadísticas por materia */}
-        <div className="mt-8">
-          <h3 className="font-semibold mb-4">Estadísticas por Materia</h3>
-          <div className="rounded-md border overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-40">Estadística</TableHead>
-                  {materiasOrdenadas.map((materia) => (
-                    <TableHead key={materia.codigo} className="text-center whitespace-nowrap">
-                      {materia.nombre_corto}
-                    </TableHead>
-                  ))}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {/* Fila de Aprobados */}
-                <TableRow>
-                  <TableCell className="font-medium">Aprobados</TableCell>
-                  {estadisticasPorMateria.map((est) => (
-                    <TableCell key={`aprobados-${est.materiaId}`} className="text-center">
-                      {est.aprobados}
-                    </TableCell>
-                  ))}
-                </TableRow>
-                {/* Fila de % Aprobados */}
-                <TableRow>
-                  <TableCell className="font-medium">% Aprobados</TableCell>
-                  {estadisticasPorMateria.map((est) => (
-                    <TableCell key={`pct-aprobados-${est.materiaId}`} className="text-center">
-                      {est.porcentajeAprobados.toFixed(2)}%
-                    </TableCell>
-                  ))}
-                </TableRow>
-                {/* Fila de Reprobados */}
-                <TableRow>
-                  <TableCell className="font-medium">Reprobados</TableCell>
-                  {estadisticasPorMateria.map((est) => (
-                    <TableCell key={`reprobados-${est.materiaId}`} className="text-center">
-                      {est.reprobados}
-                    </TableCell>
-                  ))}
-                </TableRow>
-                {/* Fila de % Reprobados */}
-                <TableRow>
-                  <TableCell className="font-medium">% Reprobados</TableCell>
-                  {estadisticasPorMateria.map((est) => (
-                    <TableCell key={`pct-reprobados-${est.materiaId}`} className="text-center">
-                      {est.porcentajeReprobados.toFixed(2)}%
-                    </TableCell>
-                  ))}
-                </TableRow>
-                {/* Fila de Promedio */}
-                <TableRow>
-                  <TableCell className="font-medium">Promedio</TableCell>
-                  {estadisticasPorMateria.map((est) => (
-                    <TableCell key={`promedio-${est.materiaId}`} className="text-center">
-                      <NotaConEstado nota={est.promedio} />
-                    </TableCell>
-                  ))}
-                </TableRow>
-              </TableBody>
-            </Table>
-          </div>
+        {/* Tabla de estadísticas por materia (alineada con la tabla principal) */}
+        <div className="mt-0 overflow-x-auto">
+          <Table className="border-t-0">
+            <TableBody>
+              {/* Fila de Aprobados */}
+              <TableRow>
+                <TableCell className="w-10 text-center"></TableCell>
+                <TableCell className="w-20"></TableCell>
+                <TableCell colSpan={2} className="font-medium">
+                  Aprobados
+                </TableCell>
+                {estadisticasPorMateria.map((est) => (
+                  <TableCell key={`aprobados-${est.materiaId}`} className="text-center whitespace-nowrap">
+                    {est.aprobados}
+                  </TableCell>
+                ))}
+                <TableCell className="text-center font-bold">-</TableCell>
+              </TableRow>
+              {/* Fila de % Aprobados */}
+              <TableRow>
+                <TableCell className="text-center"></TableCell>
+                <TableCell></TableCell>
+                <TableCell colSpan={2} className="font-medium">
+                  % Aprobados
+                </TableCell>
+                {estadisticasPorMateria.map((est) => (
+                  <TableCell key={`pct-aprobados-${est.materiaId}`} className="text-center whitespace-nowrap">
+                    {est.porcentajeAprobados.toFixed(2)}%
+                  </TableCell>
+                ))}
+                <TableCell className="text-center font-bold">-</TableCell>
+              </TableRow>
+              {/* Fila de Reprobados */}
+              <TableRow>
+                <TableCell className="text-center"></TableCell>
+                <TableCell></TableCell>
+                <TableCell colSpan={2} className="font-medium">
+                  Reprobados
+                </TableCell>
+                {estadisticasPorMateria.map((est) => (
+                  <TableCell key={`reprobados-${est.materiaId}`} className="text-center whitespace-nowrap">
+                    {est.reprobados}
+                  </TableCell>
+                ))}
+                <TableCell className="text-center font-bold">-</TableCell>
+              </TableRow>
+              {/* Fila de % Reprobados */}
+              <TableRow>
+                <TableCell className="text-center"></TableCell>
+                <TableCell></TableCell>
+                <TableCell colSpan={2} className="font-medium">
+                  % Reprobados
+                </TableCell>
+                {estadisticasPorMateria.map((est) => (
+                  <TableCell key={`pct-reprobados-${est.materiaId}`} className="text-center whitespace-nowrap">
+                    {est.porcentajeReprobados.toFixed(2)}%
+                  </TableCell>
+                ))}
+                <TableCell className="text-center font-bold">-</TableCell>
+              </TableRow>
+              {/* Fila de Promedio */}
+              <TableRow>
+                <TableCell className="text-center"></TableCell>
+                <TableCell></TableCell>
+                <TableCell colSpan={2} className="font-medium">
+                  Promedio
+                </TableCell>
+                {estadisticasPorMateria.map((est) => (
+                  <TableCell key={`promedio-${est.materiaId}`} className="text-center whitespace-nowrap">
+                    <NotaConEstado nota={est.promedio} />
+                  </TableCell>
+                ))}
+                <TableCell className="text-center font-bold">
+                  <NotaConEstado nota={promedioGeneral} />
+                </TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
         </div>
 
         {/* Leyenda de colores */}

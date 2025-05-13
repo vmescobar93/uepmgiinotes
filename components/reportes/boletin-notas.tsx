@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Download, Printer, Users } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
-import { getConfiguracion } from "@/lib/config"
 import { supabase } from "@/lib/supabase"
 import { generarBoletinPDF, generarTodosBoletinesPDF } from "@/lib/pdf/index"
 import { getEstadoNota } from "@/lib/utils"
@@ -46,19 +45,33 @@ interface BoletinNotasProps {
 function useConfiguracionYAreas() {
   const [nombreInstitucion, setNombreInstitucion] = useState("U.E. Plena María Goretti II")
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
+  const [piePaginaUrl, setPiePaginaUrl] = useState<string | null>(null)
+  const [piePaginaAltura, setPiePaginaAltura] = useState(80)
+  const [piePaginaAjuste, setPiePaginaAjuste] = useState("proporcional")
   const [areas, setAreas] = useState<Area[]>([])
 
   useEffect(() => {
     // Cargar configuración
-    getConfiguracion().then((cfg) => {
-      setNombreInstitucion(cfg.nombre_institucion)
-      setLogoUrl(cfg.logo_url)
-    })
+    const fetchConfiguracion = async () => {
+      try {
+        const response = await fetch("/api/configuracion/get")
+        const data = await response.json()
+        setNombreInstitucion(data.nombre_institucion)
+        setLogoUrl(data.logo_url)
+        setPiePaginaUrl(data.pie_pagina_url)
+        setPiePaginaAltura(data.pie_pagina_altura || 80)
+        setPiePaginaAjuste(data.pie_pagina_ajuste || "proporcional")
+      } catch (error) {
+        console.error("Error al cargar configuración:", error)
+      }
+    }
+
+    fetchConfiguracion()
 
     // Cargar áreas
     supabase
       .from("areas")
-      .select("id, nombre")
+      .select("*")
       .then(({ data, error }) => {
         if (error) {
           console.error("Error cargando áreas:", error)
@@ -75,7 +88,15 @@ function useConfiguracionYAreas() {
     return map
   }, [areas])
 
-  return { nombreInstitucion, logoUrl, areas, areaMap }
+  return {
+    nombreInstitucion,
+    logoUrl,
+    piePaginaUrl,
+    piePaginaAltura,
+    piePaginaAjuste,
+    areas,
+    areaMap,
+  }
 }
 
 // Hook personalizado para agrupar materias por área
@@ -163,7 +184,79 @@ function BoletinHeader({
 }
 
 // Componente para las firmas del boletín (versión impresa)
-function BoletinFooter() {
+function BoletinFooter({
+  piePaginaUrl,
+  piePaginaAltura,
+  piePaginaAjuste,
+}: {
+  piePaginaUrl: string | null
+  piePaginaAltura: number
+  piePaginaAjuste: string
+}) {
+  // Si hay una imagen de pie de página, mostrarla
+  if (piePaginaUrl) {
+    // Calcular estilo según el tipo de ajuste
+    let imgStyle: React.CSSProperties = {}
+
+    switch (piePaginaAjuste) {
+      case "altura_fija":
+        imgStyle = {
+          height: `${piePaginaAltura}px`,
+          width: "auto",
+          margin: "0 auto",
+          display: "block",
+        }
+        break
+      case "ancho_completo":
+        imgStyle = {
+          width: "100%",
+          height: "auto",
+        }
+        break
+      case "proporcional":
+      default:
+        imgStyle = {
+          maxHeight: `${piePaginaAltura}px`,
+          maxWidth: "100%",
+          margin: "0 auto",
+          display: "block",
+        }
+        break
+    }
+
+    return (
+      <div className="mt-8 hidden print:block">
+        <img
+          src={piePaginaUrl || "/placeholder.svg"}
+          alt="Pie de página con firmas y sellos"
+          style={imgStyle}
+          crossOrigin="anonymous"
+          onError={(e) => {
+            console.error("Error al cargar la imagen de pie de página")
+            e.currentTarget.style.display = "none"
+            // Mostrar las líneas de firma como fallback
+            const parent = e.currentTarget.parentElement
+            if (parent) {
+              parent.innerHTML = `
+                <div class="flex justify-between px-12">
+                  <div class="text-center">
+                    <div class="border-t border-black pt-2 w-40 mx-auto mt-16"></div>
+                    <p>Director/a</p>
+                  </div>
+                  <div class="text-center">
+                    <div class="border-t border-black pt-2 w-40 mx-auto mt-16"></div>
+                    <p>Padre o Apoderado</p>
+                  </div>
+                </div>
+              `
+            }
+          }}
+        />
+      </div>
+    )
+  }
+
+  // Si no hay imagen, mostrar las líneas de firma tradicionales
   return (
     <div className="mt-8 hidden print:flex justify-between px-12">
       <div className="text-center">
@@ -199,7 +292,8 @@ export function BoletinNotas({ alumno, curso, materias, calificaciones, alumnos 
   const [isExportingAll, setIsExportingAll] = useState(false)
 
   // Cargar configuración y áreas
-  const { nombreInstitucion, logoUrl, areaMap } = useConfiguracionYAreas()
+  const { nombreInstitucion, logoUrl, piePaginaUrl, piePaginaAltura, piePaginaAjuste, areaMap } =
+    useConfiguracionYAreas()
 
   // Agrupar materias por área
   const materiasAgrupadas = useMateriasPorArea(materias, areaMap)
@@ -246,7 +340,45 @@ export function BoletinNotas({ alumno, curso, materias, calificaciones, alumnos 
     setIsExporting(true)
 
     try {
-      const doc = await generarBoletinPDF(alumno, curso, materias, calificaciones, nombreInstitucion, areaMap)
+      // Obtener áreas actualizadas antes de generar el PDF
+      const { data: areasData } = await supabase.from("areas").select("id, nombre")
+
+      // Crear mapa de áreas actualizado
+      const areaMapActualizado: Record<string, string> = {}
+      if (areasData) {
+        areasData.forEach((area) => {
+          areaMapActualizado[area.id] = area.nombre
+        })
+      }
+
+      // Verificar las materias y sus áreas
+      materias.forEach((m) => {
+        console.log(
+          `Materia: ${m.nombre_largo}, ID Área: ${m.id_area}, Nombre Área: ${
+            m.id_area ? areaMapActualizado[m.id_area] || "No encontrada" : "Sin área asignada"
+          }`,
+        )
+      })
+
+      // Configuración del pie de página
+      const piePaginaConfig = {
+        piePaginaUrl,
+        piePaginaAltura,
+        piePaginaAjuste,
+      }
+
+      console.log("Configuración del pie de página:", piePaginaConfig)
+
+      const doc = await generarBoletinPDF(
+        alumno,
+        curso,
+        materias,
+        calificaciones,
+        nombreInstitucion,
+        areaMapActualizado,
+        piePaginaConfig,
+      )
+
       doc.save(`Boletin_${alumno.apellidos}_${alumno.nombres}.pdf`)
       toast({ title: "PDF generado", description: "El boletín se ha exportado correctamente." })
     } catch (error) {
@@ -271,7 +403,53 @@ export function BoletinNotas({ alumno, curso, materias, calificaciones, alumnos 
     setIsExportingAll(true)
 
     try {
-      const doc = await generarTodosBoletinesPDF(alumnos, curso, materias, calificaciones, nombreInstitucion, areaMap)
+      // Obtener áreas actualizadas antes de generar el PDF
+      const { data: areasData, error } = await supabase.from("areas").select("id, nombre")
+
+      if (error) {
+        console.error("Error al obtener áreas:", error)
+        throw new Error("No se pudieron cargar las áreas")
+      }
+
+      // Crear mapa de áreas actualizado
+      const areaMapActualizado: Record<string, string> = {}
+      if (areasData && areasData.length > 0) {
+        areasData.forEach((area) => {
+          areaMapActualizado[area.id] = area.nombre
+        })
+        console.log("Áreas cargadas para todos los boletines:", areasData.length)
+        console.log("Mapa de áreas:", areaMapActualizado)
+      } else {
+        console.warn("No se encontraron áreas en la base de datos")
+      }
+
+      // Verificar las materias y sus áreas
+      materias.forEach((m) => {
+        console.log(
+          `Materia: ${m.nombre_largo}, ID Área: ${m.id_area}, Nombre Área: ${
+            m.id_area ? areaMapActualizado[m.id_area] || "No encontrada" : "Sin área asignada"
+          }`,
+        )
+      })
+
+      // Configuración del pie de página
+      const piePaginaConfig = {
+        piePaginaUrl,
+        piePaginaAltura,
+        piePaginaAjuste,
+      }
+
+      console.log("Configuración del pie de página para todos los boletines:", piePaginaConfig)
+
+      const doc = await generarTodosBoletinesPDF(
+        alumnos,
+        curso,
+        materias,
+        calificaciones,
+        nombreInstitucion,
+        areaMapActualizado,
+        piePaginaConfig,
+      )
 
       // Guardar el documento combinado
       doc.save(`Boletines_${curso.nombre_corto}.pdf`)
@@ -418,7 +596,11 @@ export function BoletinNotas({ alumno, curso, materias, calificaciones, alumnos 
         </div>
 
         {/* Pie de página para impresión */}
-        <BoletinFooter />
+        <BoletinFooter
+          piePaginaUrl={piePaginaUrl}
+          piePaginaAltura={piePaginaAltura}
+          piePaginaAjuste={piePaginaAjuste}
+        />
 
         {/* Leyenda de colores */}
         <div className="mt-6 text-sm print:mt-4">

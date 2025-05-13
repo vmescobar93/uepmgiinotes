@@ -34,6 +34,7 @@ export async function generarCentralizadorInternoPDF(
   nombreInstitucion: string,
   logoUrl: string | null,
   estadisticasPorMateria?: EstadisticasMateria[],
+  promedioGeneral = 0,
 ): Promise<jsPDF> {
   const doc = configurarDocumentoPDF({
     orientation: "landscape",
@@ -163,7 +164,7 @@ export async function generarCentralizadorInternoPDF(
     return [(index + 1).toString(), alumno.apellidos, alumno.nombres, ...notas, promedio.toFixed(2)]
   })
 
-  // Generar tabla
+  // Generar tabla principal
   autoTable(doc, {
     margin: { left: 5, right: 5 },
     head,
@@ -263,25 +264,24 @@ export async function generarCentralizadorInternoPDF(
     })
   }
 
-  // Calcular la posición Y para la tabla de estadísticas
-  // Obtener la posición final de la tabla anterior
-  const finalY = (doc as any).lastAutoTable.finalY || 45
-  const startYEstadisticas = finalY + 20
-
-  // Título para la tabla de estadísticas
-  doc.setFontSize(12)
-  doc.setTextColor(0, 0, 0)
-  doc.text("Estadísticas por Materia", 15, startYEstadisticas - 10)
+  // Calcular promedio general si no se proporciona
+  if (promedioGeneral === 0) {
+    const promediosAlumnos = alumnos.map((alumno) => calcularPromedio(alumno.cod_moodle))
+    const sumaPromedios = promediosAlumnos.reduce((acc, promedio) => acc + promedio, 0)
+    promedioGeneral =
+      promediosAlumnos.length > 0 ? Math.round((sumaPromedios / promediosAlumnos.length) * 100) / 100 : 0
+  }
 
   // Preparar datos para la tabla de estadísticas con materias como columnas
-  const headEstadisticas = [["Estadística", ...materiasOrdenadas.map((m) => m.nombre_corto)]]
+  // Usar el mismo formato que la tabla principal
+  const headEstadisticas = [["", "", "", "", ...materiasOrdenadas.map((m) => m.nombre_corto), "Promedio"]]
 
   // Crear filas para cada tipo de estadística
-  const rowAprobados = ["Aprobados"]
-  const rowPorcentajeAprobados = ["% Aprobados"]
-  const rowReprobados = ["Reprobados"]
-  const rowPorcentajeReprobados = ["% Reprobados"]
-  const rowPromedio = ["Promedio"]
+  const rowAprobados = ["Aprobados", "", "", ""]
+  const rowPorcentajeAprobados = ["% Aprobados", "", "", ""]
+  const rowReprobados = ["Reprobados", "", "", ""]
+  const rowPorcentajeReprobados = ["% Reprobados", "", "", ""]
+  const rowPromedio = ["Promedio", "", "", ""]
 
   // Llenar los datos para cada materia
   estadisticas.forEach((est) => {
@@ -292,23 +292,42 @@ export async function generarCentralizadorInternoPDF(
     rowPromedio.push(est.promedio.toFixed(2))
   })
 
+  // Añadir el promedio general a la última columna
+  rowAprobados.push("-")
+  rowPorcentajeAprobados.push("-")
+  rowReprobados.push("-")
+  rowPorcentajeReprobados.push("-")
+  rowPromedio.push(promedioGeneral.toFixed(2))
+
   const bodyEstadisticas = [rowAprobados, rowPorcentajeAprobados, rowReprobados, rowPorcentajeReprobados, rowPromedio]
 
-  // Generar tabla de estadísticas
+  // Generar tabla de estadísticas justo después de la tabla principal
   autoTable(doc, {
     margin: { left: 5, right: 5 },
-    head: headEstadisticas,
+    head: [], // Sin encabezado para que parezca contigua
     body: bodyEstadisticas,
-    startY: startYEstadisticas,
+    startY: (doc as any).lastAutoTable.finalY, // Justo después de la tabla anterior
     theme: "grid",
-    headStyles: { fillColor: [100, 100, 100], fontSize: 8, halign: "center" },
     bodyStyles: { fontSize: 7.5, font: "helvetica" },
-    columnStyles: {
-      0: { halign: "left", fontStyle: "bold" },
+    willDrawCell: (data) => {
+      // Eliminar el borde superior para que parezca una continuación de la tabla principal
+      if (data.row.index === 0) {
+        data.cell.styles.lineWidth = { top: 0, right: 0.1, bottom: 0.1, left: 0.1 }
+      }
     },
     didParseCell: (data) => {
+      // Asegurar que las celdas tengan el mismo ancho que la tabla principal
+      if (data.column.index === 0) {
+        data.cell.styles.cellWidth = 8 // Mismo ancho que la columna # en la tabla principal
+      }
+
+      // Centrar todas las columnas excepto las primeras 4
+      if (data.column.index >= 4) {
+        data.cell.styles.halign = "center"
+      }
+
       // Aplicar colores al promedio en la última fila
-      if (data.row.index === 4 && data.column.index > 0 && data.section === "body") {
+      if (data.row.index === 4 && data.column.index >= 4) {
         const valor = data.cell.text[0]
         if (valor !== "-") {
           const nota = Number.parseFloat(valor)
