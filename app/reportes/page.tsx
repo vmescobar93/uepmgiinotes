@@ -2,23 +2,30 @@
 
 import { useState, useEffect } from "react"
 import { MainLayout } from "@/components/layout/main-layout"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Label } from "@/components/ui/label"
-import { FileText, Printer, Loader2, Users, Medal } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import { supabase } from "@/lib/supabase"
 import { CentralizadorInterno } from "@/components/reportes/centralizador-interno"
 import { CentralizadorMinedu } from "@/components/reportes/centralizador-minedu"
 import { BoletinNotas } from "@/components/reportes/boletin-notas"
 import { RankingAlumnos } from "@/components/reportes/ranking-alumnos"
-import { generarTodosBoletinesPDF } from "@/lib/pdf/index"
+import { RankingTop3 } from "@/components/reportes/ranking-top3"
+import { RankingNivel } from "@/components/reportes/ranking-nivel"
+import { HermanosLista } from "@/components/reportes/hermanos-lista"
+import { generarTodosBoletinesPDF } from "@/lib/pdf/boletines-pdf"
 import type { Database } from "@/types/supabase"
+import { Card, CardContent } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Label } from "@/components/ui/label"
+import { Loader2 } from "lucide-react"
 
 type Curso = Database["public"]["Tables"]["cursos"]["Row"]
-type Alumno = Database["public"]["Tables"]["alumnos"]["Row"]
+type Alumno = Database["public"]["Tables"]["alumnos"]["Row"] & {
+  promedio?: number
+  posicion?: number
+  curso_nombre?: string
+}
 type Materia = Database["public"]["Tables"]["materias"]["Row"]
 type Calificacion = Database["public"]["Tables"]["calificaciones"]["Row"]
 type Agrupacion = Database["public"]["Tables"]["agrupaciones_materias"]["Row"]
@@ -48,10 +55,20 @@ export default function ReportesPage() {
   const [showCentralizador, setShowCentralizador] = useState(false)
   const [showCentralizadorMinedu, setShowCentralizadorMinedu] = useState(false)
   const [showBoletin, setShowBoletin] = useState(false)
-  // Añadir un nuevo estado para controlar la visualización del ranking
   const [showRanking, setShowRanking] = useState(false)
   const [isLoadingRanking, setIsLoadingRanking] = useState(false)
   const [todosLosAlumnos, setTodosLosAlumnos] = useState<Alumno[]>([])
+
+  // Estado para el ranking Top 3
+  const [showRankingTop3, setShowRankingTop3] = useState(false)
+  const [isLoadingRankingTop3, setIsLoadingRankingTop3] = useState(false)
+  const [alumnosPorCurso, setAlumnosPorCurso] = useState<Record<string, Alumno[]>>({})
+
+  // Estado para el ranking por nivel
+  const [showRankingNivel, setShowRankingNivel] = useState(false)
+  const [isLoadingRankingNivel, setIsLoadingRankingNivel] = useState(false)
+  const [alumnosPrimaria, setAlumnosPrimaria] = useState<Alumno[]>([])
+  const [alumnosSecundaria, setAlumnosSecundaria] = useState<Alumno[]>([])
 
   const { toast } = useToast()
 
@@ -98,7 +115,228 @@ export default function ReportesPage() {
     fetchAlumnos()
   }, [selectedCurso])
 
-  // Añadir una función para generar el ranking de alumnos
+  // Función para calcular el promedio de un alumno
+  const calcularPromedioAlumno = (alumnoId: string, calificacionesRelevantes: Calificacion[]): number => {
+    // Filtrar calificaciones del alumno
+    const notasAlumno = calificacionesRelevantes.filter((cal) => cal.alumno_id === alumnoId)
+
+    if (notasAlumno.length === 0) return 0
+
+    // Si es promedio final, calcular primero el promedio por materia
+    if (selectedTrimestre === "FINAL") {
+      // Agrupar calificaciones por materia
+      const materiaMap: Record<string, number[]> = {}
+
+      notasAlumno.forEach((cal) => {
+        if (cal.materia_id && cal.nota !== null) {
+          if (!materiaMap[cal.materia_id]) {
+            materiaMap[cal.materia_id] = []
+          }
+          materiaMap[cal.materia_id].push(cal.nota)
+        }
+      })
+
+      // Calcular promedio por materia
+      const promediosPorMateria = Object.values(materiaMap).map((notas) => {
+        return notas.reduce((sum, nota) => sum + nota, 0) / notas.length
+      })
+
+      // Calcular promedio general
+      if (promediosPorMateria.length === 0) return 0
+      return (
+        Math.round((promediosPorMateria.reduce((sum, prom) => sum + prom, 0) / promediosPorMateria.length) * 100) / 100
+      )
+    } else {
+      // Para un trimestre específico, calcular el promedio directo
+      const suma = notasAlumno.reduce((sum, cal) => sum + (cal.nota || 0), 0)
+      return Math.round((suma / notasAlumno.length) * 100) / 100
+    }
+  }
+
+  // Función para generar el ranking Top 3 por curso
+  const handleGenerarRankingTop3 = async () => {
+    setIsLoadingRankingTop3(true)
+    setShowRankingTop3(false)
+    setShowRanking(false)
+    setShowCentralizador(false)
+    setShowCentralizadorMinedu(false)
+    setShowBoletin(false)
+    setShowRankingNivel(false)
+
+    try {
+      // Cargar todos los cursos
+      const { data: cursosData, error: cursosError } = await supabase.from("cursos").select("*").order("nombre_corto")
+
+      if (cursosError) {
+        throw new Error(`Error al cargar cursos: ${cursosError.message}`)
+      }
+
+      if (!cursosData || cursosData.length === 0) {
+        throw new Error("No hay cursos registrados")
+      }
+
+      // Cargar todos los alumnos activos
+      const { data: alumnosData, error: alumnosError } = await supabase
+        .from("alumnos")
+        .select("*")
+        .eq("activo", true)
+        .order("apellidos")
+
+      if (alumnosError) {
+        throw new Error(`Error al cargar alumnos: ${alumnosError.message}`)
+      }
+
+      if (!alumnosData || alumnosData.length === 0) {
+        throw new Error("No hay alumnos activos registrados")
+      }
+
+      // Cargar todas las materias
+      const { data: materiasData, error: materiasError } = await supabase.from("materias").select("codigo, curso_corto")
+
+      if (materiasError) {
+        throw new Error(`Error al cargar materias: ${materiasError.message}`)
+      }
+
+      if (!materiasData || materiasData.length === 0) {
+        throw new Error("No hay materias registradas")
+      }
+
+      // Obtener códigos de materias
+      const codigosMaterias = materiasData.map((m) => m.codigo)
+
+      // Obtener códigos de alumnos
+      const codigosAlumnos = alumnosData.map((a) => a.cod_moodle)
+
+      // Cargar calificaciones según el trimestre seleccionado
+      let calificacionesRelevantes: Calificacion[] = []
+
+      if (selectedTrimestre === "FINAL") {
+        // Para el promedio final, cargar todas las calificaciones
+        const { data: calificacionesT1 } = await supabase
+          .from("calificaciones")
+          .select("*")
+          .in("materia_id", codigosMaterias)
+          .in("alumno_id", codigosAlumnos)
+          .eq("trimestre", 1)
+
+        const { data: calificacionesT2 } = await supabase
+          .from("calificaciones")
+          .select("*")
+          .in("materia_id", codigosMaterias)
+          .in("alumno_id", codigosAlumnos)
+          .eq("trimestre", 2)
+
+        const { data: calificacionesT3 } = await supabase
+          .from("calificaciones")
+          .select("*")
+          .in("materia_id", codigosMaterias)
+          .in("alumno_id", codigosAlumnos)
+          .eq("trimestre", 3)
+
+        calificacionesRelevantes = [
+          ...(calificacionesT1 || []),
+          ...(calificacionesT2 || []),
+          ...(calificacionesT3 || []),
+        ]
+      } else {
+        // Para un trimestre específico, cargar solo esas calificaciones
+        const { data: calificacionesTrimestre } = await supabase
+          .from("calificaciones")
+          .select("*")
+          .in("materia_id", codigosMaterias)
+          .in("alumno_id", codigosAlumnos)
+          .eq("trimestre", Number.parseInt(selectedTrimestre))
+
+        calificacionesRelevantes = calificacionesTrimestre || []
+      }
+
+      // Agrupar alumnos por curso
+      const alumnosPorCursoObj: Record<string, Alumno[]> = {}
+
+      // Inicializar el objeto con todos los cursos (incluso los que no tengan alumnos)
+      cursosData.forEach((curso) => {
+        alumnosPorCursoObj[curso.nombre_corto] = []
+      })
+
+      // Calcular promedio para cada alumno y añadir información del curso
+      alumnosData.forEach((alumno) => {
+        const curso = cursosData.find((c) => c.nombre_corto === alumno.curso_corto)
+        if (!curso) return // Ignorar alumnos sin curso asignado
+
+        const promedio = calcularPromedioAlumno(alumno.cod_moodle, calificacionesRelevantes)
+
+        // Solo incluir alumnos con promedio > 0
+        if (promedio > 0) {
+          const alumnoConPromedio = {
+            ...alumno,
+            promedio,
+            curso_nombre: curso.nombre_largo,
+          }
+
+          if (!alumnosPorCursoObj[curso.nombre_corto]) {
+            alumnosPorCursoObj[curso.nombre_corto] = []
+          }
+
+          alumnosPorCursoObj[curso.nombre_corto].push(alumnoConPromedio)
+        }
+      })
+
+      // Ordenar alumnos por promedio en cada curso y asignar posición
+      Object.keys(alumnosPorCursoObj).forEach((cursoKey) => {
+        // Ordenar por promedio (descendente)
+        alumnosPorCursoObj[cursoKey].sort((a, b) => (b.promedio || 0) - (a.promedio || 0))
+
+        // Asignar posición
+        alumnosPorCursoObj[cursoKey] = alumnosPorCursoObj[cursoKey].map((alumno, index) => ({
+          ...alumno,
+          posicion: index + 1,
+        }))
+
+        // Tomar solo los 3 mejores
+        alumnosPorCursoObj[cursoKey] = alumnosPorCursoObj[cursoKey].slice(0, 3)
+      })
+
+      // Actualizar el estado
+      setAlumnosPorCurso(alumnosPorCursoObj)
+      setCursos(cursosData)
+      setShowRankingTop3(true)
+    } catch (error) {
+      console.error("Error al generar ranking Top 3:", error)
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error instanceof Error ? error.message : "No se pudo generar el ranking Top 3.",
+      })
+    } finally {
+      setIsLoadingRankingTop3(false)
+    }
+  }
+
+  // Función para generar el ranking por nivel
+  const handleGenerarRankingNivel = async () => {
+    setIsLoadingRankingNivel(true)
+    setShowRankingNivel(false)
+    setShowRankingTop3(false)
+    setShowRanking(false)
+    setShowCentralizador(false)
+    setShowCentralizadorMinedu(false)
+    setShowBoletin(false)
+
+    try {
+      // El componente RankingNivel se encargará de cargar y procesar los datos
+      setShowRankingNivel(true)
+    } catch (error) {
+      console.error("Error al preparar ranking por nivel:", error)
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error instanceof Error ? error.message : "No se pudo preparar el ranking por nivel.",
+      })
+    } finally {
+      setIsLoadingRankingNivel(false)
+    }
+  }
+
   // Función para generar el ranking de alumnos
   const handleGenerarRanking = async () => {
     if (!selectedCurso) {
@@ -112,9 +350,11 @@ export default function ReportesPage() {
 
     setIsLoadingRanking(true)
     setShowRanking(false)
+    setShowRankingTop3(false)
     setShowCentralizador(false)
     setShowCentralizadorMinedu(false)
     setShowBoletin(false)
+    setShowRankingNivel(false)
 
     try {
       let alumnosData: Alumno[] = []
@@ -217,6 +457,9 @@ export default function ReportesPage() {
     setShowCentralizador(false)
     setShowCentralizadorMinedu(false)
     setShowBoletin(false)
+    setShowRanking(false)
+    setShowRankingTop3(false)
+    setShowRankingNivel(false)
 
     try {
       // Cargar materias del curso
@@ -289,6 +532,9 @@ export default function ReportesPage() {
     setShowCentralizador(false)
     setShowCentralizadorMinedu(false)
     setShowBoletin(false)
+    setShowRanking(false)
+    setShowRankingTop3(false)
+    setShowRankingNivel(false)
 
     try {
       // Cargar materias del curso
@@ -360,6 +606,9 @@ export default function ReportesPage() {
     setShowCentralizador(false)
     setShowCentralizadorMinedu(false)
     setShowBoletin(false)
+    setShowRanking(false)
+    setShowRankingTop3(false)
+    setShowRankingNivel(false)
 
     try {
       // Cargar materias del curso
@@ -549,146 +798,24 @@ export default function ReportesPage() {
       <div className="space-y-6">
         <h1 className="text-3xl font-bold">Reportes</h1>
 
-        <Tabs defaultValue="centralizador">
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="centralizador">Centralizador</TabsTrigger>
+        <Tabs defaultValue="boletin">
+          <TabsList className="flex flex-wrap">
             <TabsTrigger value="boletin">Boletín</TabsTrigger>
+            <TabsTrigger value="centralizador">Centralizador</TabsTrigger>
+            <TabsTrigger value="centralizador-minedu">Centralizador MINEDU</TabsTrigger>
             <TabsTrigger value="ranking">Ranking</TabsTrigger>
+            <TabsTrigger value="ranking-top3">Top 3 por Curso</TabsTrigger>
+            <TabsTrigger value="ranking-nivel">Top 3 por Nivel</TabsTrigger>
+            <TabsTrigger value="hermanos">Hermanos</TabsTrigger>
           </TabsList>
-
-          <TabsContent value="centralizador" className="space-y-4 pt-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>Centralizador de Calificaciones</CardTitle>
-                <CardDescription>Genere el centralizador de calificaciones por curso y trimestre.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="curso">Curso</Label>
-                    <Select value={selectedCurso} onValueChange={setSelectedCurso}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Seleccionar curso" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {cursos.map((curso) => (
-                          <SelectItem key={curso.nombre_corto} value={curso.nombre_corto}>
-                            {curso.nombre_largo}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="trimestre">Trimestre</Label>
-                    <Select value={selectedTrimestre} onValueChange={setSelectedTrimestre}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Seleccionar trimestre" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="1">Primer Trimestre</SelectItem>
-                        <SelectItem value="2">Segundo Trimestre</SelectItem>
-                        <SelectItem value="3">Tercer Trimestre</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                <div className="flex flex-col gap-2 md:flex-row">
-                  <Button onClick={handleGenerarCentralizador} disabled={!selectedCurso || isLoading}>
-                    {isLoading ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Cargando...
-                      </>
-                    ) : (
-                      <>
-                        <FileText className="mr-2 h-4 w-4" />
-                        Centralizador Interno
-                      </>
-                    )}
-                  </Button>
-
-                  <Button
-                    onClick={handleGenerarCentralizadorMinedu}
-                    disabled={
-                      !selectedCurso ||
-                      isLoading ||
-                      (cursos.find((c) => c.nombre_corto === selectedCurso)?.nivel !== "Secundaria" &&
-                        cursos.find((c) => c.nombre_corto === selectedCurso)?.nivel !== "Primaria")
-                    }
-                    variant="outline"
-                  >
-                    {isLoading ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Cargando...
-                      </>
-                    ) : (
-                      <>
-                        <FileText className="mr-2 h-4 w-4" />
-                        Centralizador MINEDU
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-
-            {showCentralizador && (
-              <CentralizadorInterno
-                curso={cursos.find((c) => c.nombre_corto === selectedCurso)}
-                alumnos={alumnos}
-                materias={materias}
-                calificaciones={
-                  selectedTrimestre === "1"
-                    ? calificaciones.trimestre1
-                    : selectedTrimestre === "2"
-                      ? calificaciones.trimestre2
-                      : calificaciones.trimestre3
-                }
-                trimestre={selectedTrimestre}
-              />
-            )}
-
-            {showCentralizadorMinedu && (
-              <CentralizadorMinedu
-                curso={cursos.find((c) => c.nombre_corto === selectedCurso)}
-                alumnos={alumnos}
-                materias={materias}
-                calificaciones={
-                  selectedTrimestre === "1"
-                    ? calificaciones.trimestre1
-                    : selectedTrimestre === "2"
-                      ? calificaciones.trimestre2
-                      : calificaciones.trimestre3
-                }
-                agrupaciones={agrupaciones}
-                trimestre={selectedTrimestre}
-              />
-            )}
-          </TabsContent>
 
           <TabsContent value="boletin" className="space-y-4 pt-4">
             <Card>
-              <CardHeader>
-                <CardTitle>Boletín de Calificaciones</CardTitle>
-                <CardDescription>
-                  Genere el boletín individual de calificaciones por alumno y trimestre.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <CardContent className="pt-6">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                   <div className="space-y-2">
                     <Label htmlFor="curso">Curso</Label>
-                    <Select
-                      value={selectedCurso}
-                      onValueChange={(value) => {
-                        setSelectedCurso(value)
-                        setSelectedAlumno("")
-                      }}
-                    >
+                    <Select value={selectedCurso} onValueChange={setSelectedCurso}>
                       <SelectTrigger>
                         <SelectValue placeholder="Seleccionar curso" />
                       </SelectTrigger>
@@ -715,46 +842,41 @@ export default function ReportesPage() {
                       <SelectContent>
                         {alumnos.map((alumno) => (
                           <SelectItem key={alumno.cod_moodle} value={alumno.cod_moodle}>
-                            {`${alumno.apellidos}, ${alumno.nombres}`}
+                            {alumno.apellidos}, {alumno.nombres}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
-                </div>
 
-                <div className="flex flex-col gap-2 md:flex-row">
-                  <Button onClick={handleGenerarBoletin} disabled={!selectedCurso || !selectedAlumno || isLoading}>
-                    {isLoading ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Cargando...
-                      </>
-                    ) : (
-                      <>
-                        <Printer className="mr-2 h-4 w-4" />
-                        Generar Boletín
-                      </>
-                    )}
-                  </Button>
-
-                  <Button
-                    onClick={handleGenerarTodosBoletines}
-                    disabled={!selectedCurso || alumnos.length === 0 || isGeneratingAllBoletines}
-                    variant="secondary"
-                  >
-                    {isGeneratingAllBoletines ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Generando...
-                      </>
-                    ) : (
-                      <>
-                        <Users className="mr-2 h-4 w-4" />
-                        Generar Todos los Boletines
-                      </>
-                    )}
-                  </Button>
+                  <div className="flex items-end space-x-2">
+                    <Button
+                      onClick={handleGenerarBoletin}
+                      disabled={isLoading || !selectedCurso || !selectedAlumno}
+                      className="flex-1"
+                    >
+                      {isLoading ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Cargando...
+                        </>
+                      ) : (
+                        "Generar Boletín"
+                      )}
+                    </Button>
+                    <Button
+                      onClick={handleGenerarTodosBoletines}
+                      disabled={isGeneratingAllBoletines || !selectedCurso || alumnos.length === 0}
+                      variant="outline"
+                    >
+                      {isGeneratingAllBoletines ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generando...
+                        </>
+                      ) : (
+                        "Todos"
+                      )}
+                    </Button>
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -770,14 +892,10 @@ export default function ReportesPage() {
             )}
           </TabsContent>
 
-          <TabsContent value="ranking" className="space-y-4 pt-4">
+          <TabsContent value="centralizador" className="space-y-4 pt-4">
             <Card>
-              <CardHeader>
-                <CardTitle>Ranking de Alumnos</CardTitle>
-                <CardDescription>Genere el ranking de mejores alumnos por curso o nivel.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <CardContent className="pt-6">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                   <div className="space-y-2">
                     <Label htmlFor="curso">Curso</Label>
                     <Select value={selectedCurso} onValueChange={setSelectedCurso}>
@@ -790,7 +908,150 @@ export default function ReportesPage() {
                             {curso.nombre_largo}
                           </SelectItem>
                         ))}
-                        <SelectItem value="TODOS">Todos los cursos</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="trimestre">Trimestre</Label>
+                    <Select value={selectedTrimestre} onValueChange={setSelectedTrimestre}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Seleccionar trimestre" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="1">Primer Trimestre</SelectItem>
+                        <SelectItem value="2">Segundo Trimestre</SelectItem>
+                        <SelectItem value="3">Tercer Trimestre</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="flex items-end">
+                    <Button
+                      onClick={handleGenerarCentralizador}
+                      disabled={isLoading || !selectedCurso}
+                      className="w-full"
+                    >
+                      {isLoading ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Cargando...
+                        </>
+                      ) : (
+                        "Generar Centralizador"
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {showCentralizador && (
+              <CentralizadorInterno
+                curso={cursos.find((c) => c.nombre_corto === selectedCurso)}
+                alumnos={alumnos}
+                materias={materias}
+                calificaciones={
+                  selectedTrimestre === "1"
+                    ? calificaciones.trimestre1
+                    : selectedTrimestre === "2"
+                      ? calificaciones.trimestre2
+                      : calificaciones.trimestre3
+                }
+                trimestre={selectedTrimestre}
+              />
+            )}
+          </TabsContent>
+
+          <TabsContent value="centralizador-minedu" className="space-y-4 pt-4">
+            <Card>
+              <CardContent className="pt-6">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="curso">Curso</Label>
+                    <Select value={selectedCurso} onValueChange={setSelectedCurso}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Seleccionar curso" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {cursos
+                          .filter((curso) => curso.nivel === "Primaria" || curso.nivel === "Secundaria")
+                          .map((curso) => (
+                            <SelectItem key={curso.nombre_corto} value={curso.nombre_corto}>
+                              {curso.nombre_largo}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="trimestre">Trimestre</Label>
+                    <Select value={selectedTrimestre} onValueChange={setSelectedTrimestre}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Seleccionar trimestre" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="1">Primer Trimestre</SelectItem>
+                        <SelectItem value="2">Segundo Trimestre</SelectItem>
+                        <SelectItem value="3">Tercer Trimestre</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="flex items-end">
+                    <Button
+                      onClick={handleGenerarCentralizadorMinedu}
+                      disabled={isLoading || !selectedCurso}
+                      className="w-full"
+                    >
+                      {isLoading ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Cargando...
+                        </>
+                      ) : (
+                        "Generar Centralizador MINEDU"
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {showCentralizadorMinedu && (
+              <CentralizadorMinedu
+                curso={cursos.find((c) => c.nombre_corto === selectedCurso)}
+                alumnos={alumnos}
+                materias={materias}
+                calificaciones={
+                  selectedTrimestre === "1"
+                    ? calificaciones.trimestre1
+                    : selectedTrimestre === "2"
+                      ? calificaciones.trimestre2
+                      : calificaciones.trimestre3
+                }
+                agrupaciones={agrupaciones}
+                trimestre={selectedTrimestre}
+              />
+            )}
+          </TabsContent>
+
+          <TabsContent value="ranking" className="space-y-4 pt-4">
+            <Card>
+              <CardContent className="pt-6">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="curso">Curso</Label>
+                    <Select value={selectedCurso} onValueChange={setSelectedCurso}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Seleccionar curso" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="TODOS">Todos los Cursos</SelectItem>
+                        {cursos.map((curso) => (
+                          <SelectItem key={curso.nombre_corto} value={curso.nombre_corto}>
+                            {curso.nombre_largo}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
@@ -809,22 +1070,22 @@ export default function ReportesPage() {
                       </SelectContent>
                     </Select>
                   </div>
-                </div>
 
-                <div className="flex flex-col gap-2 md:flex-row">
-                  <Button onClick={handleGenerarRanking} disabled={!selectedCurso || isLoadingRanking}>
-                    {isLoadingRanking ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Cargando...
-                      </>
-                    ) : (
-                      <>
-                        <Medal className="mr-2 h-4 w-4" />
-                        Generar Ranking
-                      </>
-                    )}
-                  </Button>
+                  <div className="flex items-end">
+                    <Button
+                      onClick={handleGenerarRanking}
+                      disabled={isLoadingRanking || !selectedCurso}
+                      className="w-full"
+                    >
+                      {isLoadingRanking ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Cargando...
+                        </>
+                      ) : (
+                        "Generar Ranking"
+                      )}
+                    </Button>
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -838,6 +1099,86 @@ export default function ReportesPage() {
                 selectedTrimestre={selectedTrimestre}
               />
             )}
+          </TabsContent>
+
+          <TabsContent value="ranking-top3" className="space-y-4 pt-4">
+            <Card>
+              <CardContent className="pt-6">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="trimestre">Trimestre</Label>
+                    <Select value={selectedTrimestre} onValueChange={setSelectedTrimestre}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Seleccionar trimestre" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="1">Primer Trimestre</SelectItem>
+                        <SelectItem value="2">Segundo Trimestre</SelectItem>
+                        <SelectItem value="3">Tercer Trimestre</SelectItem>
+                        <SelectItem value="FINAL">Promedio Anual</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="flex items-end">
+                    <Button onClick={handleGenerarRankingTop3} disabled={isLoadingRankingTop3} className="w-full">
+                      {isLoadingRankingTop3 ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Cargando...
+                        </>
+                      ) : (
+                        "Generar Ranking Top 3"
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {showRankingTop3 && (
+              <RankingTop3 alumnosPorCurso={alumnosPorCurso} cursos={cursos} selectedTrimestre={selectedTrimestre} />
+            )}
+          </TabsContent>
+
+          <TabsContent value="ranking-nivel" className="space-y-4 pt-4">
+            <Card>
+              <CardContent className="pt-6">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="trimestre">Trimestre</Label>
+                    <Select value={selectedTrimestre} onValueChange={setSelectedTrimestre}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Seleccionar trimestre" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="1">Primer Trimestre</SelectItem>
+                        <SelectItem value="2">Segundo Trimestre</SelectItem>
+                        <SelectItem value="3">Tercer Trimestre</SelectItem>
+                        <SelectItem value="FINAL">Promedio Anual</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="flex items-end">
+                    <Button onClick={handleGenerarRankingNivel} disabled={isLoadingRankingNivel} className="w-full">
+                      {isLoadingRankingNivel ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Cargando...
+                        </>
+                      ) : (
+                        "Generar Ranking por Nivel"
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {showRankingNivel && <RankingNivel selectedTrimestre={selectedTrimestre} />}
+          </TabsContent>
+
+          <TabsContent value="hermanos" className="space-y-4 pt-4">
+            <HermanosLista />
           </TabsContent>
         </Tabs>
       </div>

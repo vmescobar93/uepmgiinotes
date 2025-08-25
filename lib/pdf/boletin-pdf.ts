@@ -217,7 +217,7 @@ export async function generarBoletinPDF(
         const imgHeight = (img.height * imgWidth) / img.width
 
         console.log("Añadiendo logo al PDF de boletín:", imgWidth, imgHeight)
-        pdfDoc.addImage(img, "JPEG", 10, 10, imgWidth, imgHeight)
+        pdfDoc.addImage(img, "JPEG", 15, 10, imgWidth, imgHeight)
       } else {
         console.warn("No se pudo cargar el logo para el boletín")
       }
@@ -238,13 +238,13 @@ export async function generarBoletinPDF(
 
   // Agregar leyenda de colores
   pdfDoc.setFontSize(9)
-  pdfDoc.text("Escala de Rendimiento:", 202, 13, { align: "right" })
+  pdfDoc.text("Escala de Rendimiento:", 200, 13, { align: "right" })
   pdfDoc.setTextColor(255, 0, 0)
-  pdfDoc.text("No Satisfactorio: 0 - 50", 202, 17, { align: "right" })
+  pdfDoc.text("No Satisfactorio: 0 - 50", 200, 17, { align: "right" })
   pdfDoc.setTextColor(245, 158, 11)
-  pdfDoc.text("Satisfactorio: 51 - 79", 202, 21, { align: "right" })
+  pdfDoc.text("Satisfactorio: 51 - 79", 200, 21, { align: "right" })
   pdfDoc.setTextColor(0, 0, 0)
-  pdfDoc.text("Óptimo: 80 - 100", 202, 25, { align: "right" })
+  pdfDoc.text("Óptimo: 80 - 100", 200, 25, { align: "right" })
 
   // Información del alumno y curso
   pdfDoc.setFontSize(11)

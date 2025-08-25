@@ -39,3 +39,39 @@ export function getEstiloNotaPDF(nota: number, currentStyles: any = {}) {
 
   return styles
 }
+
+/**
+ * Normaliza un texto para comparación (elimina acentos, convierte a minúsculas, etc.)
+ * @param texto Texto a normalizar
+ * @returns Texto normalizado
+ */
+export function normalizarTexto(texto: string): string {
+  if (!texto) return ""
+
+  return (
+    texto
+      .toLowerCase()
+      // Normalizar Unicode y eliminar acentos
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      // Eliminar caracteres que no sean letras o números
+      .replace(/[^a-z0-9\s]/g, "")
+      // Eliminar espacios extra
+      .trim()
+      .replace(/\s+/g, " ")
+  )
+}
+
+/**
+ * Formatea una fecha en formato español
+ * @param fecha Fecha a formatear
+ * @returns Fecha formateada
+ */
+export function formatearFecha(fecha: Date | string): string {
+  const date = typeof fecha === "string" ? new Date(fecha) : fecha
+  return date.toLocaleDateString("es-ES", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  })
+}

@@ -30,6 +30,7 @@ export default function CalificacionesPage() {
   const [selectedTrimestre, setSelectedTrimestre] = useState<string>("1")
   const [isLoading, setIsLoading] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
+  const [hasPendingChanges, setHasPendingChanges] = useState(false) // Añadir estado para rastrear cambios pendientes
   const { toast } = useToast()
 
   // Fetch profesores activos
@@ -168,6 +169,7 @@ export default function CalificacionesPage() {
 
     setCalificacionesInput((prev) => ({ ...prev, [id]: raw }))
     setCalificaciones((prev) => ({ ...prev, [id]: Math.round(value * 100) / 100 }))
+    setHasPendingChanges(true) // Marcar cambios pendientes
   }
 
   const handleInputBlur = (id: string) => {
@@ -187,6 +189,44 @@ export default function CalificacionesPage() {
       ...prev,
       [id]: value,
     }))
+  }
+
+  // Funciones para validar cambios antes de cambiar selección
+  const handleProfesorChange = (newProfesor: string) => {
+    if (hasPendingChanges) {
+      toast({
+        variant: "destructive",
+        title: "Cambios sin guardar",
+        description: "Debe guardar las calificaciones antes de cambiar de profesor.",
+      })
+      return
+    }
+    setSelectedProfesor(newProfesor)
+    setSelectedMateria("")
+  }
+
+  const handleMateriaChange = (newMateria: string) => {
+    if (hasPendingChanges) {
+      toast({
+        variant: "destructive",
+        title: "Cambios sin guardar",
+        description: "Debe guardar las calificaciones antes de cambiar de materia.",
+      })
+      return
+    }
+    setSelectedMateria(newMateria)
+  }
+
+  const handleTrimestreChange = (newTrimestre: string) => {
+    if (hasPendingChanges) {
+      toast({
+        variant: "destructive",
+        title: "Cambios sin guardar",
+        description: "Debe guardar las calificaciones antes de cambiar de trimestre.",
+      })
+      return
+    }
+    setSelectedTrimestre(newTrimestre)
   }
 
   // Guardar calificaciones
@@ -223,6 +263,7 @@ export default function CalificacionesPage() {
 
       if (error) throw error
 
+      setHasPendingChanges(false) // Limpiar cambios pendientes
       toast({
         title: "Calificaciones guardadas",
         description: "Las calificaciones se han guardado correctamente.",
@@ -257,10 +298,7 @@ export default function CalificacionesPage() {
                 <Label>Profesor</Label>
                 <Select
                   value={selectedProfesor}
-                  onValueChange={(v) => {
-                    setSelectedProfesor(v)
-                    setSelectedMateria("")
-                  }}
+                  onValueChange={handleProfesorChange} // Usar nuevo handler
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Seleccionar profesor" />
@@ -279,7 +317,7 @@ export default function CalificacionesPage() {
                 <Label>Materia</Label>
                 <Select
                   value={selectedMateria}
-                  onValueChange={setSelectedMateria}
+                  onValueChange={handleMateriaChange} // Usar nuevo handler
                   disabled={!selectedProfesor || !materias.length}
                 >
                   <SelectTrigger>
@@ -297,7 +335,8 @@ export default function CalificacionesPage() {
 
               <div className="space-y-2">
                 <Label>Trimestre</Label>
-                <Select value={selectedTrimestre} onValueChange={setSelectedTrimestre}>
+                <Select value={selectedTrimestre} onValueChange={handleTrimestreChange}>
+                  {" "}
                   <SelectTrigger>
                     <SelectValue placeholder="Seleccionar trimestre" />
                   </SelectTrigger>
@@ -313,7 +352,11 @@ export default function CalificacionesPage() {
             {/* Botón para exportar todas las calificaciones */}
             {selectedProfesor && (
               <div className="flex justify-end">
-                <TodasCalificacionesReporte selectedProfesor={selectedProfesor} profesorNombre={nombreProfesor} />
+                <TodasCalificacionesReporte
+                  selectedProfesor={selectedProfesor}
+                  profesorNombre={nombreProfesor}
+                  selectedTrimestre={selectedTrimestre}
+                />
               </div>
             )}
 
@@ -366,9 +409,13 @@ export default function CalificacionesPage() {
                     selectedMateria={selectedMateria}
                     selectedTrimestre={selectedTrimestre}
                   />
-                  <Button onClick={handleGuardar} disabled={isSaving}>
+                  <Button
+                    onClick={handleGuardar}
+                    disabled={isSaving}
+                    variant={hasPendingChanges ? "default" : "outline"}
+                  >
                     {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                    Guardar
+                    {hasPendingChanges ? "Guardar cambios" : "Guardar"}
                   </Button>
                 </div>
               </>

@@ -7,7 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Download, Printer } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import { getConfiguracion } from "@/lib/config"
-import { generarCentralizadorMineduPDF } from "@/lib/pdf"
+import { generarCentralizadorMineduPDF } from "@/lib/pdf/centralizador-minedu-pdf"
 import { getEstadoNota } from "@/lib/utils"
 import type { Database } from "@/types/supabase"
 
@@ -24,21 +24,6 @@ interface CentralizadorMineduProps {
   calificaciones: Calificacion[]
   agrupaciones: Agrupacion[]
   trimestre: string
-}
-
-interface MateriaAgrupada {
-  id_area: number
-  nombre_grupo: string
-  nombre_mostrar: string
-  materias: string[]
-  orden: number // Valor mínimo de orden entre las materias del grupo
-}
-
-interface ElementoOrdenado {
-  tipo: "grupo" | "materia"
-  id: string // id_area-nombre_grupo para grupos, codigo para materias
-  nombre: string // nombre_grupo para grupos, nombre_corto para materias
-  orden: number
 }
 
 // Componente para mostrar una nota con el color correspondiente
@@ -70,6 +55,21 @@ export function CentralizadorMinedu({
   const [elementosOrdenados, setElementosOrdenados] = useState<ElementoOrdenado[]>([])
   const [materiasAgrupadas, setMateriasAgrupadas] = useState<Record<string, MateriaAgrupada>>({})
   const [materiasNoAgrupadas, setMateriasNoAgrupadas] = useState<Materia[]>([])
+
+  interface MateriaAgrupada {
+    id_area: number
+    nombre_grupo: string
+    nombre_mostrar: string
+    materias: string[]
+    orden: number // Valor mínimo de orden entre las materias del grupo
+  }
+
+  interface ElementoOrdenado {
+    tipo: "grupo" | "materia"
+    id: string // id_area-nombre_grupo para grupos, codigo para materias
+    nombre: string // nombre_grupo para grupos, nombre_corto para materias
+    orden: number
+  }
 
   // Cargar configuración
   useEffect(() => {

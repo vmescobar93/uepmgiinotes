@@ -200,14 +200,16 @@ export async function generarCalificacionesPDF({
 }
 
 /**
- * Genera un PDF con todas las calificaciones de un profesor para todas sus materias y trimestres
+ * Genera un PDF con todas las calificaciones de un profesor para un trimestre específico o todos los trimestres
  */
 export async function generarTodasCalificacionesPDF({
   profesorId,
   currentUserInfo,
+  selectedTrimestre,
 }: {
   profesorId: string
   currentUserInfo: Usuario | null
+  selectedTrimestre?: string
 }) {
   if (!profesorId) {
     throw new Error("Seleccione un profesor.")
@@ -286,8 +288,10 @@ export async function generarTodasCalificacionesPDF({
 
   // Procesar cada materia y trimestre
   let isFirstPage = true
-  const trimestres = ["1", "2", "3"]
   const nombreProfesor = `${profesor.nombre} ${profesor.apellidos}`
+
+  // Si se especifica un trimestre, solo procesar ese trimestre
+  const trimestres = selectedTrimestre ? [selectedTrimestre] : ["1", "2", "3"]
 
   for (const materia of materias) {
     for (const trimestre of trimestres) {
@@ -413,7 +417,10 @@ export async function generarTodasCalificacionesPDF({
 
   // Si no se generó ninguna página, lanzar error
   if (isFirstPage) {
-    throw new Error("No hay calificaciones registradas para este profesor.")
+    const trimestreText = selectedTrimestre
+      ? ` del ${selectedTrimestre === "1" ? "1er" : selectedTrimestre === "2" ? "2do" : "3er"} trimestre`
+      : ""
+    throw new Error(`No hay calificaciones registradas para este profesor${trimestreText}.`)
   }
 
   return doc

@@ -8,22 +8,20 @@ import { supabase } from "@/lib/supabase"
 import { useAuth } from "@/context/auth-context"
 import { generarTodasCalificacionesPDF } from "@/lib/pdf"
 
-interface TodasCalificacionesReporteProps {
+export function TodasCalificacionesReporte({
+  selectedProfesor,
+  profesorNombre,
+  selectedTrimestre,
+}: {
   selectedProfesor: string
-  profesorNombre?: string
-}
-
-export function TodasCalificacionesReporte({ selectedProfesor, profesorNombre }: TodasCalificacionesReporteProps) {
+  profesorNombre: string
+  selectedTrimestre: string
+}) {
   const { toast } = useToast()
   const [isLoading, setIsLoading] = useState(false)
   const { user } = useAuth()
 
   const handleGeneratePdf = async () => {
-    if (!selectedProfesor) {
-      toast({ variant: "destructive", title: "Error", description: "Seleccione un profesor." })
-      return
-    }
-
     if (!user) {
       toast({
         variant: "destructive",
@@ -39,14 +37,20 @@ export function TodasCalificacionesReporte({ selectedProfesor, profesorNombre }:
       // Obtener información del usuario actual
       const { data: currentUserInfo } = await supabase.from("usuarios").select("*").eq("id", user.id).single()
 
-      // Generar el PDF con todas las calificaciones
+      if (!currentUserInfo) {
+        throw new Error("No se pudo obtener información del usuario actual.")
+      }
+
+      // Generar el PDF con todas las calificaciones del trimestre seleccionado
       const doc = await generarTodasCalificacionesPDF({
         profesorId: selectedProfesor,
         currentUserInfo,
+        selectedTrimestre,
       })
 
-      // Guardar el PDF
-      const nombreArchivo = `Todas_Calificaciones_${profesorNombre || selectedProfesor}.pdf`
+      // Guardar el PDF con el nombre que incluye el trimestre
+      const trimestreText = selectedTrimestre === "1" ? "1er" : selectedTrimestre === "2" ? "2do" : "3er"
+      const nombreArchivo = `Calificaciones_${profesorNombre}_${trimestreText}Trimestre.pdf`
       doc.save(nombreArchivo)
     } catch (error: any) {
       console.error("Error al generar PDF:", error)
@@ -63,8 +67,8 @@ export function TodasCalificacionesReporte({ selectedProfesor, profesorNombre }:
   return (
     <Button
       onClick={handleGeneratePdf}
-      disabled={!selectedProfesor || isLoading}
-      className="flex items-center"
+      disabled={isLoading}
+      className="flex items-center bg-transparent"
       variant="outline"
     >
       {isLoading ? (
@@ -75,7 +79,8 @@ export function TodasCalificacionesReporte({ selectedProfesor, profesorNombre }:
       ) : (
         <>
           <FileText className="mr-2 h-4 w-4" />
-          Exportar todas las calificaciones
+          Exportar calificaciones ({selectedTrimestre === "1" ? "1er" : selectedTrimestre === "2" ? "2do" : "3er"}{" "}
+          Trimestre)
         </>
       )}
     </Button>
