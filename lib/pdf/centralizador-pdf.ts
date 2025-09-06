@@ -272,62 +272,46 @@ export async function generarCentralizadorInternoPDF(
       promediosAlumnos.length > 0 ? Math.round((sumaPromedios / promediosAlumnos.length) * 100) / 100 : 0
   }
 
-  // Preparar datos para la tabla de estadísticas con materias como columnas
-  // Usar el mismo formato que la tabla principal
-  const headEstadisticas = [["", "", "", "", ...materiasOrdenadas.map((m) => m.nombre_corto), "Promedio"]]
+  // Generar tabla de estadísticas como una tabla independiente con encabezados
+  const headEstadisticas = [["Estadística", ...materiasOrdenadas.map((m) => m.nombre_corto), "General"]]
 
-  // Crear filas para cada tipo de estadística
-  const rowAprobados = ["Aprobados", "", "", ""]
-  const rowPorcentajeAprobados = ["% Aprobados", "", "", ""]
-  const rowReprobados = ["Reprobados", "", "", ""]
-  const rowPorcentajeReprobados = ["% Reprobados", "", "", ""]
-  const rowPromedio = ["Promedio", "", "", ""]
+  const bodyEstadisticas = [
+    ["Aprobados", ...estadisticas.map((est) => est.aprobados.toString()), "-"],
+    ["% Aprobados", ...estadisticas.map((est) => est.porcentajeAprobados.toFixed(2) + "%"), "-"],
+    ["Reprobados", ...estadisticas.map((est) => est.reprobados.toString()), "-"],
+    ["% Reprobados", ...estadisticas.map((est) => est.porcentajeReprobados.toFixed(2) + "%"), "-"],
+    ["Promedio", ...estadisticas.map((est) => est.promedio.toFixed(2)), promedioGeneral.toFixed(2)],
+  ]
 
-  // Llenar los datos para cada materia
-  estadisticas.forEach((est) => {
-    rowAprobados.push(est.aprobados.toString())
-    rowPorcentajeAprobados.push(est.porcentajeAprobados.toFixed(2) + "%")
-    rowReprobados.push(est.reprobados.toString())
-    rowPorcentajeReprobados.push(est.porcentajeReprobados.toFixed(2) + "%")
-    rowPromedio.push(est.promedio.toFixed(2))
-  })
+  // Agregar espacio entre las tablas
+  const espacioEntreTablas = 15
 
-  // Añadir el promedio general a la última columna
-  rowAprobados.push("-")
-  rowPorcentajeAprobados.push("-")
-  rowReprobados.push("-")
-  rowPorcentajeReprobados.push("-")
-  rowPromedio.push(promedioGeneral.toFixed(2))
-
-  const bodyEstadisticas = [rowAprobados, rowPorcentajeAprobados, rowReprobados, rowPorcentajeReprobados, rowPromedio]
-
-  // Generar tabla de estadísticas justo después de la tabla principal
+  // Generar tabla de estadísticas
   autoTable(doc, {
     margin: { left: 5, right: 5 },
-    head: [], // Sin encabezado para que parezca contigua
+    head: headEstadisticas,
     body: bodyEstadisticas,
-    startY: (doc as any).lastAutoTable.finalY, // Justo después de la tabla anterior
+    startY: (doc as any).lastAutoTable.finalY + espacioEntreTablas,
     theme: "grid",
+    headStyles: {
+      fillColor: [71, 71, 71], // Color #474747 convertido a RGB
+      fontSize: 8,
+      halign: "center",
+      textColor: [255, 255, 255], // Texto blanco
+    },
     bodyStyles: { fontSize: 7.5, font: "helvetica" },
-    willDrawCell: (data) => {
-      // Eliminar el borde superior para que parezca una continuación de la tabla principal
-      if (data.row.index === 0) {
-        data.cell.styles.lineWidth = { top: 0, right: 0.1, bottom: 0.1, left: 0.1 }
-      }
+    columnStyles: {
+      0: { halign: "left", fontStyle: "bold" }, // Primera columna (nombres de estadísticas) alineada a la izquierda y en negrita
     },
     didParseCell: (data) => {
-      // Asegurar que las celdas tengan el mismo ancho que la tabla principal
-      if (data.column.index === 0) {
-        data.cell.styles.cellWidth = 8 // Mismo ancho que la columna # en la tabla principal
-      }
-
-      // Centrar todas las columnas excepto las primeras 4
-      if (data.column.index >= 4) {
+      // Centrar todas las columnas de datos (excepto la primera)
+      if (data.column.index > 0) {
         data.cell.styles.halign = "center"
       }
 
-      // Aplicar colores al promedio en la última fila
-      if (data.row.index === 4 && data.column.index >= 4) {
+      // Aplicar colores a los promedios en la última fila
+      if (data.row.index === 4 && data.column.index > 0) {
+        // Fila de promedios
         const valor = data.cell.text[0]
         if (valor !== "-") {
           const nota = Number.parseFloat(valor)
