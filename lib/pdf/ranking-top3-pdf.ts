@@ -1,5 +1,6 @@
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
+import { supabase } from "@/lib/supabase"
 import type { Database } from "@/types/supabase"
 
 // Tipos
@@ -18,127 +19,212 @@ export async function generarRankingTop3PDF(
   alumnosPorCurso: Record<string, Alumno[]>,
   cursos: Curso[],
   nombreInstitucion: string,
-  logoUrl: string,
+  logoUrl: string | null,
   trimestreTexto: string,
 ): Promise<jsPDF> {
-  const doc = new jsPDF("portrait", "mm", "a4")
+  // Crear documento PDF
+  const doc = new jsPDF({
+    orientation: "portrait",
+    unit: "mm",
+    format: "a4",
+  })
 
-  // Cargar el logo
-  const logoBase64 = logoUrl ? await cargarLogo(logoUrl) : null
-
-  // Agregar encabezado
-  agregarEncabezado(doc, nombreInstitucion, logoBase64, trimestreTexto)
-
-  let currentY = 55
-
-  // Generar tabla para cada curso que tenga alumnos
-  Object.keys(alumnosPorCurso).forEach((cursoCodigo) => {
-    const alumnosCurso = alumnosPorCurso[cursoCodigo]
-
-    if (alumnosCurso.length === 0) return
-
-    const curso = cursos.find((c) => c.nombre_corto === cursoCodigo)
-    if (!curso) return
-
-    // Verificar si necesitamos una nueva página
-    if (currentY > 250) {
-      doc.addPage()
-      currentY = 20
+  // Función para cargar logo
+  async function cargarLogo(logoUrl: string | null): Promise<HTMLImageElement | null> {
+    if (!logoUrl) {
+      console.warn("No se proporcionó una URL de logo.")
+      return null
     }
 
-    // Título del curso
-    doc.setFontSize(12)
+    try {
+      const img = new Image()
+      img.crossOrigin = "anonymous"
+
+      await new Promise((resolve, reject) => {
+        img.onload = () => resolve(img)
+        img.onerror = reject
+        img.src = logoUrl
+      })
+
+      return img
+    } catch (error) {
+      console.error("Error al cargar el logo:", error)
+      return null
+    }
+  }
+
+  // Añadir logo si existe
+  try {
+    const { data: configData } = await supabase.from("configuracion").select("logo_url").eq("id", 1).single()
+    const logoUrlFromConfig = configData?.logo_url || logoUrl
+
+    const img = await cargarLogo(logoUrlFromConfig)
+    if (img) {
+      // Calcular dimensiones para mantener proporción
+      const imgWidth = 70
+      const imgHeight = (img.height * imgWidth) / img.width
+
+      console.log("Añadiendo logo al PDF de ranking top 3:", imgWidth, imgHeight)
+      doc.addImage(img, "JPEG", 15, 10, imgWidth, imgHeight)
+    } else {
+      console.warn("No se pudo cargar el logo para el ranking top 3")
+    }
+  } catch (error) {
+    console.error("Error al añadir el logo al PDF de ranking top 3:", error)
+  }
+
+  // Añadir encabezado
+  await agregarEncabezado(doc, trimestreTexto)
+
+  // Ordenar cursos por nivel y nombre
+  const cursosOrdenados = [...cursos].sort((a, b) => {
+    if (a.nivel !== b.nivel) {
+      // Orden de niveles: Inicial, Primaria, Secundaria
+      const nivelOrden: Record<string, number> = {
+        Inicial: 1,
+        Primaria: 2,
+        Secundaria: 3,
+      }
+      return (nivelOrden[a.nivel] || 99) - (nivelOrden[b.nivel] || 99)
+    }
+    return a.nombre_largo.localeCompare(b.nombre_largo)
+  })
+
+  // Agrupar cursos por nivel
+  const cursosPorNivel: Record<string, Curso[]> = {}
+  cursosOrdenados.forEach((curso) => {
+    if (!cursosPorNivel[curso.nivel]) {
+      cursosPorNivel[curso.nivel] = []
+    }
+    cursosPorNivel[curso.nivel].push(curso)
+  })
+
+  // Posición inicial
+  let y = 40 // Aumentado para dar más espacio al encabezado con logo más grande
+  const margenX = 15
+
+  // Procesar cada nivel
+  Object.entries(cursosPorNivel).forEach(([nivel, cursosNivel], nivelIndex) => {
+    // Añadir título del nivel
     doc.setFont("helvetica", "bold")
-    doc.text(`${curso.nombre_largo}`, 15, currentY)
-    currentY += 10
+    doc.setFontSize(14)
+    doc.text(`Nivel ${nivel}`, margenX, y)
+    y += 10
 
-    // Preparar datos para la tabla
-    const headers = ["Pos.", "Alumno", "Promedio"]
-    const data = alumnosCurso.map((alumno) => [
-      alumno.posicion?.toString() || "-",
-      `${alumno.apellidos}, ${alumno.nombres}`,
-      alumno.promedio?.toFixed(2) || "-",
-    ])
+    // Procesar cada curso del nivel
+    cursosNivel.forEach((curso, cursoIndex) => {
+      const alumnos = alumnosPorCurso[curso.nombre_corto] || []
 
-    // Generar tabla
-    autoTable(doc, {
-      head: [headers],
-      body: data,
-      startY: currentY,
-      styles: {
-        fontSize: 10,
-        cellPadding: 3,
-      },
-      headStyles: {
-        fillColor: [255, 193, 7], // Amarillo
-        textColor: [0, 0, 0],
-        fontStyle: "bold",
-      },
-      columnStyles: {
-        0: { halign: "center", cellWidth: 20 },
-        1: { halign: "left", cellWidth: 100 },
-        2: { halign: "center", cellWidth: 30 },
-      },
-      alternateRowStyles: {
-        fillColor: [245, 245, 245],
-      },
-      margin: { left: 15, right: 15 },
+      // Si no hay alumnos, mostrar mensaje
+      if (alumnos.length === 0) {
+        doc.setFont("helvetica", "normal")
+        doc.setFontSize(10)
+        doc.text(`${curso.nombre_largo}: No hay datos suficientes`, margenX, y)
+        y += 8
+        return
+      }
+
+      // Añadir título del curso
+      doc.setFont("helvetica", "bold")
+      doc.setFontSize(12)
+      doc.text(`${curso.nombre_largo}`, margenX, y)
+      y += 8
+
+      // Crear tabla para este curso
+      autoTable(doc, {
+        startY: y,
+        head: [["Posición", "Alumno", "Promedio"]],
+        body: alumnos.map((alumno) => [
+          alumno.posicion?.toString() || "-",
+          `${alumno.apellidos}, ${alumno.nombres}`,
+          alumno.promedio?.toFixed(2) || "-",
+        ]),
+        headStyles: {
+          fillColor: [255, 196, 0], // Color amarillo para los encabezados
+          textColor: [0, 0, 0], // Texto negro para mejor contraste
+          fontStyle: "bold",
+        },
+        bodyStyles: {
+          fontSize: 10,
+        },
+        columnStyles: {
+          0: { cellWidth: 20, halign: "center" },
+          2: { cellWidth: 20, halign: "center" },
+        },
+        alternateRowStyles: {
+          fillColor: [245, 245, 245], // Gris muy claro para filas alternas
+        },
+        margin: { left: margenX },
+      })
+
+      // Actualizar posición Y después de la tabla
+      y = (doc as any).lastAutoTable.finalY + 10
+
+      // Verificar si necesitamos una nueva página
+      if (y > 250 && cursoIndex < cursosNivel.length - 1) {
+        doc.addPage()
+        y = 20
+      }
     })
 
-    currentY = (doc as any).lastAutoTable.finalY + 15
+    // Añadir nueva página entre niveles si no es el último
+    if (nivelIndex < Object.keys(cursosPorNivel).length - 1) {
+      doc.addPage()
+      y = 20
+    }
   })
+
+  // Añadir pie de página
+  agregarPiePagina(doc)
 
   return doc
 }
 
 /**
- * Carga el logo desde una URL
+ * Añade el encabezado al documento PDF
  */
-async function cargarLogo(logoUrl: string): Promise<string | null> {
-  try {
-    const response = await fetch(logoUrl)
-    const blob = await response.blob()
+async function agregarEncabezado(doc: jsPDF, trimestreTexto: string): Promise<void> {
+  const pageWidth = doc.internal.pageSize.width
+  const margenDerecho = 15 // Margen derecho para el texto
 
-    return new Promise((resolve) => {
-      const reader = new FileReader()
-      reader.onload = () => resolve(reader.result as string)
-      reader.onerror = () => resolve(null)
-      reader.readAsDataURL(blob)
-    })
-  } catch (error) {
-    console.error("Error al cargar el logo:", error)
-    return null
-  }
+  // Título del reporte - alineado a la derecha y a la misma altura que el logo
+  doc.setFont("helvetica", "bold")
+  doc.setFontSize(18)
+  doc.text("MEJORES ALUMNOS POR CURSO", pageWidth - margenDerecho, 15, { align: "right" })
+
+  // Trimestre - alineado a la derecha y debajo del título
+  doc.setFontSize(14)
+  doc.text(`Periodo: ${trimestreTexto}`, pageWidth - margenDerecho, 22, { align: "right" })
+
+  // Fecha de generación - alineado a la derecha y debajo del trimestre
+  const fecha = new Date().toLocaleDateString("es-ES", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  })
+  doc.setFont("helvetica", "normal")
+  doc.setFontSize(10)
+  doc.text(`Fecha de generación: ${fecha}`, pageWidth - margenDerecho, 29, { align: "right" })
+
+  // Línea separadora - debajo del logo o del texto, lo que sea más bajo
+  const lineaY = 32
+  doc.setDrawColor(255, 196, 0) // Color amarillo para la línea
+  doc.setLineWidth(1)
+  doc.line(15, lineaY, pageWidth - 15, lineaY)
 }
 
 /**
- * Añade el encabezado al documento PDF
+ * Añade el pie de página al documento PDF
  */
-function agregarEncabezado(doc: jsPDF, nombreInstitucion: string, logoBase64: string | null, trimestreTexto: string) {
-  // Logo
-  if (logoBase64) {
-    try {
-      doc.addImage(logoBase64, "PNG", 15, 10, 25, 25)
-    } catch (error) {
-      console.error("Error al agregar logo:", error)
-    }
+function agregarPiePagina(doc: jsPDF): void {
+  const pageCount = doc.getNumberOfPages()
+  const pageWidth = doc.internal.pageSize.width
+  const pageHeight = doc.internal.pageSize.height
+
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i)
+    doc.setFont("helvetica", "normal")
+    doc.setFontSize(8)
+    doc.text(`Página ${i} de ${pageCount}`, pageWidth / 2, pageHeight - 10, { align: "center" })
   }
-
-  // Título de la institución
-  doc.setFontSize(16)
-  doc.setFont("helvetica", "bold")
-  doc.text(nombreInstitucion, 45, 20)
-
-  // Título del reporte
-  doc.setFontSize(14)
-  doc.text("RANKING TOP 3 POR CURSO", 45, 28)
-
-  // Información del trimestre
-  doc.setFontSize(12)
-  doc.setFont("helvetica", "normal")
-  doc.text(`Periodo: ${trimestreTexto}`, 45, 36)
-
-  // Fecha
-  const fecha = new Date().toLocaleDateString("es-ES")
-  doc.text(`Fecha: ${fecha}`, 150, 36)
 }

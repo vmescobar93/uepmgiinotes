@@ -274,17 +274,37 @@ export function HermanosLista() {
         let calificacionesFiltradas: Calificacion[] = []
 
         if (selectedTrimestre === "FINAL") {
-          // Para el promedio anual, necesitamos todas las calificaciones
-          const { data: calificaciones, error: calificacionesError } = await supabase
-            .from("calificaciones")
-            .select("*")
-            .in("alumno_id", idsAlumnos)
+          // Para el promedio anual, necesitamos todas las calificaciones (posiblemente más de 1000)
+          const pageSize = 1000;
+          let page = 0;
+          let allCalificaciones: Calificacion[] = [];
 
-          if (calificacionesError) {
-            throw new Error(`Error al cargar calificaciones: ${calificacionesError.message}`)
+          while (true) {
+            const from = page * pageSize;
+            const to = from + pageSize - 1;
+
+            const { data: calificaciones, error: calificacionesError } = await supabase
+              .from("calificaciones")
+              .select("*")
+              .in("alumno_id", idsAlumnos)
+              .range(from, to);
+
+            if (calificacionesError) {
+              throw new Error(`Error al cargar calificaciones: ${calificacionesError.message}`);
+            }
+
+            if (calificaciones && calificaciones.length > 0) {
+              allCalificaciones = allCalificaciones.concat(calificaciones);
+            }
+
+            if (!calificaciones || calificaciones.length < pageSize) {
+              break; // última página
+            }
+
+            page++;
           }
 
-          calificacionesFiltradas = calificaciones || []
+          calificacionesFiltradas = allCalificaciones;
         } else {
           // Para un trimestre específico, filtramos por trimestre
           const trimestreNum = Number.parseInt(selectedTrimestre)
