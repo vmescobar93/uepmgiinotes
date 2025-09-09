@@ -64,7 +64,7 @@ export default function ReportesPage() {
   const [isLoadingRankingTop3, setIsLoadingRankingTop3] = useState(false)
   const [alumnosPorCurso, setAlumnosPorCurso] = useState<Record<string, Alumno[]>>({})
 
-  // Estado para el ranking por nivel
+  // Estado para el ranking por nivel - SIMPLIFICADO
   const [showRankingNivel, setShowRankingNivel] = useState(false)
   const [isLoadingRankingNivel, setIsLoadingRankingNivel] = useState(false)
   const [alumnosPrimaria, setAlumnosPrimaria] = useState<Alumno[]>([])
@@ -201,53 +201,53 @@ export default function ReportesPage() {
         throw new Error("No hay materias registradas")
       }
 
-      // Obtener códigos de materias
-      const codigosMaterias = materiasData.map((m) => m.codigo)
+      // SOLUCIÓN: Cargar calificaciones por curso en lugar de todas a la vez
+      // Esto evita el límite de 1000 filas de Supabase
+      let todasLasCalificaciones: Calificacion[] = []
 
-      // Obtener códigos de alumnos
-      const codigosAlumnos = alumnosData.map((a) => a.cod_moodle)
+      // Agrupar alumnos por curso para consultas más eficientes
+      const alumnosPorCursoMap: Record<string, string[]> = {}
+      alumnosData.forEach((alumno) => {
+        if (!alumnosPorCursoMap[alumno.curso_corto]) {
+          alumnosPorCursoMap[alumno.curso_corto] = []
+        }
+        alumnosPorCursoMap[alumno.curso_corto].push(alumno.cod_moodle)
+      })
 
-      // Cargar calificaciones según el trimestre seleccionado
-      let calificacionesRelevantes: Calificacion[] = []
+      // Cargar calificaciones curso por curso
+      for (const cursoCodigo of Object.keys(alumnosPorCursoMap)) {
+        const alumnosDelCurso = alumnosPorCursoMap[cursoCodigo]
+        const materiasCurso = materiasData.filter((m) => m.curso_corto === cursoCodigo).map((m) => m.codigo)
 
-      if (selectedTrimestre === "FINAL") {
-        // Para el promedio final, cargar todas las calificaciones
-        const { data: calificacionesT1 } = await supabase
-          .from("calificaciones")
-          .select("*")
-          .in("materia_id", codigosMaterias)
-          .in("alumno_id", codigosAlumnos)
-          .eq("trimestre", 1)
+        if (selectedTrimestre === "FINAL") {
+          // Para el promedio final, cargar los tres trimestres
+          for (let t = 1; t <= 3; t++) {
+            const { data: calificacionesTrimestre } = await supabase
+              .from("calificaciones")
+              .select("*")
+              .in("materia_id", materiasCurso)
+              .in("alumno_id", alumnosDelCurso)
+              .eq("trimestre", t)
+              .limit(5000)
 
-        const { data: calificacionesT2 } = await supabase
-          .from("calificaciones")
-          .select("*")
-          .in("materia_id", codigosMaterias)
-          .in("alumno_id", codigosAlumnos)
-          .eq("trimestre", 2)
+            if (calificacionesTrimestre) {
+              todasLasCalificaciones = [...todasLasCalificaciones, ...calificacionesTrimestre]
+            }
+          }
+        } else {
+          // Para un trimestre específico
+          const { data: calificacionesTrimestre } = await supabase
+            .from("calificaciones")
+            .select("*")
+            .in("materia_id", materiasCurso)
+            .in("alumno_id", alumnosDelCurso)
+            .eq("trimestre", Number.parseInt(selectedTrimestre))
+            .limit(5000)
 
-        const { data: calificacionesT3 } = await supabase
-          .from("calificaciones")
-          .select("*")
-          .in("materia_id", codigosMaterias)
-          .in("alumno_id", codigosAlumnos)
-          .eq("trimestre", 3)
-
-        calificacionesRelevantes = [
-          ...(calificacionesT1 || []),
-          ...(calificacionesT2 || []),
-          ...(calificacionesT3 || []),
-        ]
-      } else {
-        // Para un trimestre específico, cargar solo esas calificaciones
-        const { data: calificacionesTrimestre } = await supabase
-          .from("calificaciones")
-          .select("*")
-          .in("materia_id", codigosMaterias)
-          .in("alumno_id", codigosAlumnos)
-          .eq("trimestre", Number.parseInt(selectedTrimestre))
-
-        calificacionesRelevantes = calificacionesTrimestre || []
+          if (calificacionesTrimestre) {
+            todasLasCalificaciones = [...todasLasCalificaciones, ...calificacionesTrimestre]
+          }
+        }
       }
 
       // Agrupar alumnos por curso
@@ -263,7 +263,7 @@ export default function ReportesPage() {
         const curso = cursosData.find((c) => c.nombre_corto === alumno.curso_corto)
         if (!curso) return // Ignorar alumnos sin curso asignado
 
-        const promedio = calcularPromedioAlumno(alumno.cod_moodle, calificacionesRelevantes)
+        const promedio = calcularPromedioAlumno(alumno.cod_moodle, todasLasCalificaciones)
 
         // Solo incluir alumnos con promedio > 0
         if (promedio > 0) {
@@ -312,7 +312,7 @@ export default function ReportesPage() {
     }
   }
 
-  // Función para generar el ranking por nivel
+  // Función para generar el ranking por nivel - COMPLETAMENTE NUEVA
   const handleGenerarRankingNivel = async () => {
     setIsLoadingRankingNivel(true)
     setShowRankingNivel(false)
@@ -323,17 +323,214 @@ export default function ReportesPage() {
     setShowBoletin(false)
 
     try {
-      // El componente RankingNivel se encargará de cargar y procesar los datos
+      // Cargar todos los cursos
+      const { data: cursosData, error: cursosError } = await supabase.from("cursos").select("*").order("nombre_corto")
+
+      if (cursosError) {
+        throw new Error(`Error al cargar cursos: ${cursosError.message}`)
+      }
+
+      if (!cursosData || cursosData.length === 0) {
+        throw new Error("No hay cursos registrados")
+      }
+
+      // Cargar todos los alumnos activos
+      const { data: alumnosData, error: alumnosError } = await supabase
+        .from("alumnos")
+        .select("*")
+        .eq("activo", true)
+        .order("apellidos")
+
+      if (alumnosError) {
+        throw new Error(`Error al cargar alumnos: ${alumnosError.message}`)
+      }
+
+      if (!alumnosData || alumnosData.length === 0) {
+        throw new Error("No hay alumnos activos registrados")
+      }
+
+      // Cargar todas las materias
+      const { data: materiasData, error: materiasError } = await supabase.from("materias").select("codigo, curso_corto")
+
+      if (materiasError) {
+        throw new Error(`Error al cargar materias: ${materiasError.message}`)
+      }
+
+      if (!materiasData || materiasData.length === 0) {
+        throw new Error("No hay materias registradas")
+      }
+
+      // Cargar calificaciones por curso
+      let todasLasCalificaciones: Calificacion[] = []
+
+      // Agrupar alumnos por curso para consultas más eficientes
+      const alumnosPorCursoMap: Record<string, string[]> = {}
+      alumnosData.forEach((alumno) => {
+        if (!alumnosPorCursoMap[alumno.curso_corto]) {
+          alumnosPorCursoMap[alumno.curso_corto] = []
+        }
+        alumnosPorCursoMap[alumno.curso_corto].push(alumno.cod_moodle)
+      })
+
+      // Cargar calificaciones curso por curso
+      for (const cursoCodigo of Object.keys(alumnosPorCursoMap)) {
+        const alumnosDelCurso = alumnosPorCursoMap[cursoCodigo]
+        const materiasCurso = materiasData.filter((m) => m.curso_corto === cursoCodigo).map((m) => m.codigo)
+
+        if (selectedTrimestre === "FINAL") {
+          // Para el promedio final, cargar los tres trimestres
+          for (let t = 1; t <= 3; t++) {
+            const { data: calificacionesTrimestre } = await supabase
+              .from("calificaciones")
+              .select("*")
+              .in("materia_id", materiasCurso)
+              .in("alumno_id", alumnosDelCurso)
+              .eq("trimestre", t)
+              .limit(5000)
+
+            if (calificacionesTrimestre) {
+              todasLasCalificaciones = [...todasLasCalificaciones, ...calificacionesTrimestre]
+            }
+          }
+        } else {
+          // Para un trimestre específico
+          const { data: calificacionesTrimestre } = await supabase
+            .from("calificaciones")
+            .select("*")
+            .in("materia_id", materiasCurso)
+            .in("alumno_id", alumnosDelCurso)
+            .eq("trimestre", Number.parseInt(selectedTrimestre))
+            .limit(5000)
+
+          if (calificacionesTrimestre) {
+            todasLasCalificaciones = [...todasLasCalificaciones, ...calificacionesTrimestre]
+          }
+        }
+      }
+
+      // Obtener el mejor alumno de cada curso
+      const mejoresAlumnosPorCurso: Record<string, Alumno> = {}
+
+      // Procesar cada alumno
+      alumnosData.forEach((alumno) => {
+        const curso = cursosData.find((c) => c.nombre_corto === alumno.curso_corto)
+        if (!curso) return // Ignorar alumnos sin curso asignado
+
+        // Calcular promedio usando la función del componente padre
+        const promedio = calcularPromedioAlumnoNivel(alumno.cod_moodle, todasLasCalificaciones, selectedTrimestre)
+
+        // Solo considerar alumnos con promedio > 0
+        if (promedio > 0) {
+          const alumnoConPromedio = {
+            ...alumno,
+            promedio,
+            curso_nombre: curso.nombre_largo,
+          }
+
+          // Verificar si es el mejor de su curso
+          if (
+            !mejoresAlumnosPorCurso[curso.nombre_corto] ||
+            promedio > (mejoresAlumnosPorCurso[curso.nombre_corto].promedio || 0)
+          ) {
+            mejoresAlumnosPorCurso[curso.nombre_corto] = alumnoConPromedio
+          }
+        }
+      })
+
+      // Separar los mejores alumnos por nivel
+      const mejoresAlumnosPrimaria: Alumno[] = []
+      const mejoresAlumnosSecundaria: Alumno[] = []
+
+      Object.keys(mejoresAlumnosPorCurso).forEach((cursoCodigo) => {
+        const alumno = mejoresAlumnosPorCurso[cursoCodigo]
+        const curso = cursosData.find((c) => c.nombre_corto === cursoCodigo)
+
+        if (curso) {
+          if (curso.nivel === "Primaria") {
+            mejoresAlumnosPrimaria.push(alumno)
+          } else if (curso.nivel === "Secundaria") {
+            mejoresAlumnosSecundaria.push(alumno)
+          }
+        }
+      })
+
+      // Ordenar por promedio (de mayor a menor)
+      mejoresAlumnosPrimaria.sort((a, b) => (b.promedio || 0) - (a.promedio || 0))
+      mejoresAlumnosSecundaria.sort((a, b) => (b.promedio || 0) - (a.promedio || 0))
+
+      // Asignar posiciones
+      mejoresAlumnosPrimaria.forEach((alumno, index) => {
+        alumno.posicion = index + 1
+      })
+
+      mejoresAlumnosSecundaria.forEach((alumno, index) => {
+        alumno.posicion = index + 1
+      })
+
+      // Tomar solo los 3 mejores de cada nivel
+      const top3Primaria = mejoresAlumnosPrimaria.slice(0, 3)
+      const top3Secundaria = mejoresAlumnosSecundaria.slice(0, 3)
+
+      // Actualizar el estado
+      setAlumnosPrimaria(top3Primaria)
+      setAlumnosSecundaria(top3Secundaria)
       setShowRankingNivel(true)
     } catch (error) {
-      console.error("Error al preparar ranking por nivel:", error)
+      console.error("Error al generar ranking por nivel:", error)
       toast({
         variant: "destructive",
         title: "Error",
-        description: error instanceof Error ? error.message : "No se pudo preparar el ranking por nivel.",
+        description: error instanceof Error ? error.message : "No se pudo generar el ranking por nivel.",
       })
     } finally {
       setIsLoadingRankingNivel(false)
+    }
+  }
+
+  // Función para calcular el promedio de un alumno para ranking por nivel
+  const calcularPromedioAlumnoNivel = (alumnoId: string, calificaciones: Calificacion[], trimestre: string): number => {
+    // Filtrar calificaciones del alumno
+    const notasAlumno = calificaciones.filter((cal) => cal.alumno_id === alumnoId)
+
+    if (notasAlumno.length === 0) return 0
+
+    // Si es promedio final, calcular primero el promedio por materia
+    if (trimestre === "FINAL") {
+      // Agrupar calificaciones por materia
+      const materiaMap: Record<string, number[]> = {}
+
+      notasAlumno.forEach((cal) => {
+        if (cal.materia_id && cal.nota !== null) {
+          if (!materiaMap[cal.materia_id]) {
+            materiaMap[cal.materia_id] = []
+          }
+          materiaMap[cal.materia_id].push(Number(cal.nota))
+        }
+      })
+
+      // Calcular promedio por materia
+      const promediosPorMateria = Object.entries(materiaMap).map(([materiaId, notas]) => {
+        return notas.reduce((sum, nota) => sum + nota, 0) / notas.length
+      })
+
+      // Calcular promedio general
+      if (promediosPorMateria.length === 0) return 0
+
+      return (
+        Math.round((promediosPorMateria.reduce((sum, prom) => sum + prom, 0) / promediosPorMateria.length) * 100) / 100
+      )
+    } else {
+      // Para un trimestre específico, calcular el promedio directo
+      // Verificar si hay notas nulas o indefinidas
+      const notasValidas = notasAlumno.filter((cal) => cal.nota !== null && cal.nota !== undefined)
+
+      if (notasValidas.length === 0) return 0
+
+      // Convertir explícitamente a número para evitar problemas con strings
+      const notasNumericas = notasValidas.map((cal) => Number(cal.nota))
+
+      const suma = notasNumericas.reduce((sum, nota) => sum + nota, 0)
+      return Math.round((suma / notasNumericas.length) * 100) / 100
     }
   }
 
@@ -1174,7 +1371,13 @@ export default function ReportesPage() {
               </CardContent>
             </Card>
 
-            {showRankingNivel && <RankingNivel selectedTrimestre={selectedTrimestre} />}
+            {showRankingNivel && (
+              <RankingNivel
+                selectedTrimestre={selectedTrimestre}
+                alumnosPrimaria={alumnosPrimaria}
+                alumnosSecundaria={alumnosSecundaria}
+              />
+            )}
           </TabsContent>
 
           <TabsContent value="hermanos" className="space-y-4 pt-4">
