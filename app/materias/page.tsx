@@ -636,14 +636,14 @@ export default function MateriasPage() {
               <div className="grid gap-2">
                 <Label htmlFor="create_area">Area</Label>
                 <Select
-                  value={editForm.id_area}
-                  onValueChange={(v) => setEditForm({ ...editForm, id_area: v })}
+                  value={editForm.id_area || "none"}
+                  onValueChange={(v) => setEditForm({ ...editForm, id_area: v === "none" ? "" : v })}
                 >
                   <SelectTrigger id="create_area">
                     <SelectValue placeholder="Sin area" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Sin area</SelectItem>
+                    <SelectItem value="none">Sin area</SelectItem>
                     {areas.map((area) => (
                       <SelectItem key={area.id} value={area.id}>
                         {area.nombre}
@@ -705,14 +705,14 @@ export default function MateriasPage() {
               <div className="grid gap-2">
                 <Label htmlFor="edit_curso">Curso</Label>
                 <Select
-                  value={editForm.curso_corto}
-                  onValueChange={(v) => setEditForm({ ...editForm, curso_corto: v })}
+                  value={editForm.curso_corto || "none"}
+                  onValueChange={(v) => setEditForm({ ...editForm, curso_corto: v === "none" ? "" : v })}
                 >
                   <SelectTrigger id="edit_curso">
                     <SelectValue placeholder="Seleccionar" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Sin asignar</SelectItem>
+                    <SelectItem value="none">Sin asignar</SelectItem>
                     {cursos.map((curso) => (
                       <SelectItem key={curso.nombre_corto} value={curso.nombre_corto}>
                         {curso.nombre_corto}
@@ -724,14 +724,14 @@ export default function MateriasPage() {
               <div className="grid gap-2">
                 <Label htmlFor="edit_area">Area</Label>
                 <Select
-                  value={editForm.id_area}
-                  onValueChange={(v) => setEditForm({ ...editForm, id_area: v })}
+                  value={editForm.id_area || "none"}
+                  onValueChange={(v) => setEditForm({ ...editForm, id_area: v === "none" ? "" : v })}
                 >
                   <SelectTrigger id="edit_area">
                     <SelectValue placeholder="Seleccionar" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Sin area</SelectItem>
+                    <SelectItem value="none">Sin area</SelectItem>
                     {areas.map((area) => (
                       <SelectItem key={area.id} value={area.id}>
                         {area.nombre}

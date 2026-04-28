@@ -140,19 +140,16 @@ export interface Database {
         Row: {
           id: string
           nombre: string
-          orden: number
           gestion_id: number
         }
         Insert: {
           id?: string
           nombre: string
-          orden: number
           gestion_id: number
         }
         Update: {
           id?: string
           nombre?: string
-          orden?: number
           gestion_id?: number
         }
       }
