@@ -341,21 +341,21 @@ export default function AgrupacionesPage() {
                                   </span>
                                 )}
                               </TableCell>
-                              <TableCell>
-                                <DropdownMenu>
+                              <TableCell onClick={(e) => e.stopPropagation()}>
+                                <DropdownMenu modal={false}>
                                   <DropdownMenuTrigger asChild>
                                     <Button variant="ghost" size="icon">
                                       <MoreHorizontal className="h-4 w-4" />
                                     </Button>
                                   </DropdownMenuTrigger>
                                   <DropdownMenuContent align="end">
-                                    <DropdownMenuItem onClick={() => openEditDialog(item)}>
+                                    <DropdownMenuItem onSelect={() => openEditDialog(item)}>
                                       <Pencil className="mr-2 h-4 w-4" />
                                       Editar
                                     </DropdownMenuItem>
                                     <DropdownMenuItem
                                       className="text-destructive"
-                                      onClick={() => openDeleteDialog(item.id)}
+                                      onSelect={() => openDeleteDialog(item.id)}
                                     >
                                       <Trash2 className="mr-2 h-4 w-4" />
                                       Eliminar

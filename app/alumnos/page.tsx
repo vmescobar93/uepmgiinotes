@@ -389,21 +389,21 @@ export default function AlumnosPage() {
                               <Badge variant="destructive">Inactivo</Badge>
                             )}
                           </TableCell>
-                          <TableCell>
-                            <DropdownMenu>
+                          <TableCell onClick={(e) => e.stopPropagation()}>
+                            <DropdownMenu modal={false}>
                               <DropdownMenuTrigger asChild>
                                 <Button variant="ghost" size="icon">
                                   <MoreHorizontal className="h-4 w-4" />
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
-                                <DropdownMenuItem onClick={() => openEditDialog(alumno)}>
+                                <DropdownMenuItem onSelect={() => openEditDialog(alumno)}>
                                   <Pencil className="mr-2 h-4 w-4" />
                                   Editar
                                 </DropdownMenuItem>
                                 <DropdownMenuItem
                                   className="text-destructive"
-                                  onClick={() => openDeleteDialog(alumno)}
+                                  onSelect={() => openDeleteDialog(alumno)}
                                 >
                                   <Trash2 className="mr-2 h-4 w-4" />
                                   Eliminar

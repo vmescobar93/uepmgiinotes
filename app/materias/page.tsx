@@ -355,21 +355,21 @@ export default function MateriasPage() {
                               "-"
                             )}
                           </TableCell>
-                          <TableCell>
-                            <DropdownMenu>
+                          <TableCell onClick={(e) => e.stopPropagation()}>
+                            <DropdownMenu modal={false}>
                               <DropdownMenuTrigger asChild>
                                 <Button variant="ghost" size="icon">
                                   <MoreHorizontal className="h-4 w-4" />
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
-                                <DropdownMenuItem onClick={() => openEditDialog(materia)}>
+                                <DropdownMenuItem onSelect={() => openEditDialog(materia)}>
                                   <Pencil className="mr-2 h-4 w-4" />
                                   Editar
                                 </DropdownMenuItem>
                                 <DropdownMenuItem
                                   className="text-destructive"
-                                  onClick={() => openDeleteDialog(materia)}
+                                  onSelect={() => openDeleteDialog(materia)}
                                 >
                                   <Trash2 className="mr-2 h-4 w-4" />
                                   Eliminar
