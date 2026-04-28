@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useToast } from "@/components/ui/use-toast"
-import { Loader2, HelpCircle, Download, Upload, Trash2, AlertTriangle } from "lucide-react"
+import { Loader2, HelpCircle, Download, Upload, Trash2, AlertTriangle, FileSpreadsheet, FileText } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { LogoPreview } from "@/components/configuracion/logo-preview"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -48,7 +48,24 @@ export default function ConfiguracionPage() {
   const [isRestoring, setIsRestoring] = useState(false)
   const [isClearing, setIsClearing] = useState(false)
   const [backupStats, setBackupStats] = useState<any>(null)
+  const [selectedTable, setSelectedTable] = useState<string>("all")
+  const [exportFormat, setExportFormat] = useState<string>("xlsx")
+  const [isExportingTable, setIsExportingTable] = useState(false)
   const { toast } = useToast()
+
+  const TABLES = [
+    { value: "all", label: "Todas las tablas" },
+    { value: "cursos", label: "Cursos" },
+    { value: "areas", label: "Areas" },
+    { value: "profesores", label: "Profesores" },
+    { value: "alumnos", label: "Alumnos" },
+    { value: "materias", label: "Materias" },
+    { value: "materias_profesores", label: "Asignaciones (Materias-Profesores)" },
+    { value: "calificaciones", label: "Calificaciones" },
+    { value: "agrupaciones_materias", label: "Agrupaciones de Materias" },
+    { value: "configuracion", label: "Configuracion" },
+    { value: "usuarios", label: "Usuarios" },
+  ]
 
   useEffect(() => {
     async function fetchConfiguracion() {
@@ -321,6 +338,36 @@ export default function ConfiguracionPage() {
     } finally {
       setIsRestoring(false)
       e.target.value = ""
+    }
+  }
+
+  const handleExportTable = async () => {
+    setIsExportingTable(true)
+    try {
+      const format = selectedTable === "all" ? "xlsx" : exportFormat
+      const url = `/api/backup/export-table?table=${selectedTable}&format=${format}`
+      
+      // Usar un enlace directo para descargar
+      const link = document.createElement("a")
+      link.href = url
+      link.download = ""
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+
+      toast({
+        title: "Exportacion iniciada",
+        description: `Descargando ${selectedTable === "all" ? "todas las tablas" : selectedTable} en formato ${format.toUpperCase()}`,
+      })
+    } catch (error: any) {
+      console.error("Error:", error)
+      toast({
+        title: "Error",
+        description: error.message || "No se pudo exportar",
+        variant: "destructive",
+      })
+    } finally {
+      setIsExportingTable(false)
     }
   }
 
@@ -742,7 +789,83 @@ export default function ConfiguracionPage() {
                     ) : (
                       <>
                         <Download className="mr-2 h-4 w-4" />
-                        Descargar Backup
+                        Descargar Backup (JSON)
+                      </>
+                    )}
+                  </Button>
+                </CardFooter>
+              </Card>
+
+              {/* Exportar a Excel/CSV */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <FileSpreadsheet className="h-5 w-5" />
+                    Exportar a Excel / CSV
+                  </CardTitle>
+                  <CardDescription>
+                    Exporta tablas individuales o todas las tablas en formato Excel o CSV
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="export_table">Tabla a exportar</Label>
+                      <Select value={selectedTable} onValueChange={setSelectedTable}>
+                        <SelectTrigger id="export_table">
+                          <SelectValue placeholder="Seleccione una tabla" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {TABLES.map((table) => (
+                            <SelectItem key={table.value} value={table.value}>
+                              {table.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {selectedTable !== "all" && (
+                      <div className="space-y-2">
+                        <Label htmlFor="export_format">Formato</Label>
+                        <Select value={exportFormat} onValueChange={setExportFormat}>
+                          <SelectTrigger id="export_format">
+                            <SelectValue placeholder="Seleccione formato" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="xlsx">
+                              <div className="flex items-center gap-2">
+                                <FileSpreadsheet className="h-4 w-4" />
+                                Excel (.xlsx)
+                              </div>
+                            </SelectItem>
+                            <SelectItem value="csv">
+                              <div className="flex items-center gap-2">
+                                <FileText className="h-4 w-4" />
+                                CSV (.csv)
+                              </div>
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                  </div>
+                  {selectedTable === "all" && (
+                    <p className="text-sm text-muted-foreground">
+                      Al exportar todas las tablas, se generara un archivo Excel con una hoja por cada tabla.
+                    </p>
+                  )}
+                </CardContent>
+                <CardFooter>
+                  <Button onClick={handleExportTable} disabled={isExportingTable}>
+                    {isExportingTable ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Exportando...
+                      </>
+                    ) : (
+                      <>
+                        <FileSpreadsheet className="mr-2 h-4 w-4" />
+                        Exportar {selectedTable === "all" ? "Todo (Excel)" : exportFormat.toUpperCase()}
                       </>
                     )}
                   </Button>
