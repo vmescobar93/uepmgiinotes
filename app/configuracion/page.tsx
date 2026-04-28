@@ -10,7 +10,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useToast } from "@/components/ui/use-toast"
-import { Loader2, HelpCircle } from "lucide-react"
+import { Loader2, HelpCircle, Download, Upload, Trash2, AlertTriangle } from "lucide-react"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { LogoPreview } from "@/components/configuracion/logo-preview"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Slider } from "@/components/ui/slider"
@@ -43,6 +44,10 @@ export default function ConfiguracionPage() {
   const [isUploadingLogo, setIsUploadingLogo] = useState(false)
   const [isUploadingPiePagina, setIsUploadingPiePagina] = useState(false)
   const [isSavingPiePaginaConfig, setIsSavingPiePaginaConfig] = useState(false)
+  const [isExporting, setIsExporting] = useState(false)
+  const [isRestoring, setIsRestoring] = useState(false)
+  const [isClearing, setIsClearing] = useState(false)
+  const [backupStats, setBackupStats] = useState<any>(null)
   const { toast } = useToast()
 
   useEffect(() => {
@@ -219,6 +224,147 @@ export default function ConfiguracionPage() {
     }
   }
 
+  const handleExportBackup = async () => {
+    setIsExporting(true)
+    try {
+      const response = await fetch("/api/backup/export")
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || "Error al exportar backup")
+      }
+
+      const backup = await response.json()
+      setBackupStats(backup.estadisticas)
+
+      // Crear y descargar el archivo
+      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `backup_gestion_${backup.gestion}_${new Date().toISOString().split("T")[0]}.json`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+
+      toast({
+        title: "Backup exportado",
+        description: `Se ha descargado el backup de la gestión ${backup.gestion}`,
+      })
+    } catch (error: any) {
+      console.error("Error:", error)
+      toast({
+        title: "Error",
+        description: error.message || "No se pudo exportar el backup",
+        variant: "destructive",
+      })
+    } finally {
+      setIsExporting(false)
+    }
+  }
+
+  const handleRestoreBackup = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setIsRestoring(true)
+    try {
+      const content = await file.text()
+      const backup = JSON.parse(content)
+
+      if (!backup.version || !backup.datos) {
+        throw new Error("El archivo no tiene el formato correcto de backup")
+      }
+
+      const confirmRestore = window.confirm(
+        `¿Está seguro de restaurar el backup de la gestión ${backup.gestion}?\n\n` +
+        `Fecha del backup: ${new Date(backup.fecha_backup).toLocaleString()}\n\n` +
+        `Esto reemplazará TODOS los datos actuales:\n` +
+        `- ${backup.estadisticas?.total_alumnos || 0} alumnos\n` +
+        `- ${backup.estadisticas?.total_profesores || 0} profesores\n` +
+        `- ${backup.estadisticas?.total_calificaciones || 0} calificaciones\n\n` +
+        `Esta acción no se puede deshacer.`
+      )
+
+      if (!confirmRestore) {
+        setIsRestoring(false)
+        e.target.value = ""
+        return
+      }
+
+      const response = await fetch("/api/backup/restore", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(backup),
+      })
+
+      const result = await response.json()
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || result.errores?.join(", ") || "Error al restaurar")
+      }
+
+      toast({
+        title: "Backup restaurado",
+        description: `Se han restaurado los datos de la gestión ${backup.gestion}`,
+      })
+
+      // Recargar la página para mostrar los nuevos datos
+      window.location.reload()
+    } catch (error: any) {
+      console.error("Error:", error)
+      toast({
+        title: "Error",
+        description: error.message || "No se pudo restaurar el backup",
+        variant: "destructive",
+      })
+    } finally {
+      setIsRestoring(false)
+      e.target.value = ""
+    }
+  }
+
+  const handleClearGestion = async () => {
+    const confirmClear = window.confirm(
+      "¿Está seguro de limpiar los datos de la gestión actual?\n\n" +
+      "Esto eliminará:\n" +
+      "- TODAS las calificaciones\n\n" +
+      "Se mantendrán:\n" +
+      "- Cursos, Materias, Profesores, Alumnos\n" +
+      "- Configuración del sistema\n\n" +
+      "Esta acción no se puede deshacer. Se recomienda hacer un backup primero."
+    )
+
+    if (!confirmClear) return
+
+    setIsClearing(true)
+    try {
+      const response = await fetch("/api/backup/clear-gestion", {
+        method: "POST",
+      })
+
+      const result = await response.json()
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || "Error al limpiar datos")
+      }
+
+      toast({
+        title: "Gestión limpiada",
+        description: "Se han eliminado las calificaciones. El sistema está listo para la nueva gestión.",
+      })
+    } catch (error: any) {
+      console.error("Error:", error)
+      toast({
+        title: "Error",
+        description: error.message || "No se pudo limpiar la gestión",
+        variant: "destructive",
+      })
+    } finally {
+      setIsClearing(false)
+    }
+  }
+
   const handleSavePiePaginaConfig = async () => {
     setIsSavingPiePaginaConfig(true)
     try {
@@ -265,6 +411,7 @@ export default function ConfiguracionPage() {
           <TabsList className="mb-4">
             <TabsTrigger value="general">General</TabsTrigger>
             <TabsTrigger value="apariencia">Apariencia</TabsTrigger>
+            <TabsTrigger value="backup">Backup / Gestión</TabsTrigger>
           </TabsList>
 
           <TabsContent value="general">
@@ -544,6 +691,159 @@ export default function ConfiguracionPage() {
                 </div>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="backup">
+            <div className="space-y-6">
+              {/* Exportar Backup */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Download className="h-5 w-5" />
+                    Exportar Backup
+                  </CardTitle>
+                  <CardDescription>
+                    Descarga un archivo con todos los datos del sistema para respaldarlo
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <p className="text-sm text-muted-foreground">
+                    El backup incluye: cursos, materias, profesores, alumnos, calificaciones, 
+                    asignaciones y configuración del sistema.
+                  </p>
+                  {backupStats && (
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-muted rounded-lg">
+                      <div className="text-center">
+                        <p className="text-2xl font-bold">{backupStats.total_alumnos}</p>
+                        <p className="text-sm text-muted-foreground">Alumnos</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-2xl font-bold">{backupStats.total_profesores}</p>
+                        <p className="text-sm text-muted-foreground">Profesores</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-2xl font-bold">{backupStats.total_materias}</p>
+                        <p className="text-sm text-muted-foreground">Materias</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-2xl font-bold">{backupStats.total_calificaciones}</p>
+                        <p className="text-sm text-muted-foreground">Calificaciones</p>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+                <CardFooter>
+                  <Button onClick={handleExportBackup} disabled={isExporting}>
+                    {isExporting ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Exportando...
+                      </>
+                    ) : (
+                      <>
+                        <Download className="mr-2 h-4 w-4" />
+                        Descargar Backup
+                      </>
+                    )}
+                  </Button>
+                </CardFooter>
+              </Card>
+
+              {/* Restaurar Backup */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Upload className="h-5 w-5" />
+                    Restaurar Backup
+                  </CardTitle>
+                  <CardDescription>
+                    Carga un archivo de backup para restaurar los datos del sistema
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <Alert variant="destructive">
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertTitle>Advertencia</AlertTitle>
+                    <AlertDescription>
+                      Restaurar un backup reemplazará TODOS los datos actuales del sistema.
+                      Esta acción no se puede deshacer.
+                    </AlertDescription>
+                  </Alert>
+                  <div className="space-y-2">
+                    <Label htmlFor="backup_file">Archivo de Backup</Label>
+                    <Input
+                      id="backup_file"
+                      type="file"
+                      accept=".json"
+                      onChange={handleRestoreBackup}
+                      disabled={isRestoring}
+                    />
+                    <p className="text-sm text-muted-foreground">
+                      Seleccione un archivo .json de backup generado anteriormente
+                    </p>
+                  </div>
+                  {isRestoring && (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Restaurando datos... Por favor espere
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Cambio de Gestión */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Trash2 className="h-5 w-5" />
+                    Cambio de Gestión
+                  </CardTitle>
+                  <CardDescription>
+                    Prepara el sistema para una nueva gestión escolar
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <Alert>
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertTitle>Recomendación</AlertTitle>
+                    <AlertDescription>
+                      Antes de limpiar los datos, asegúrese de haber descargado un backup completo
+                      de la gestión actual.
+                    </AlertDescription>
+                  </Alert>
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium">Esta acción eliminará:</p>
+                    <ul className="list-disc list-inside text-sm text-muted-foreground space-y-1">
+                      <li>Todas las calificaciones registradas</li>
+                    </ul>
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium">Se mantendrán:</p>
+                    <ul className="list-disc list-inside text-sm text-muted-foreground space-y-1">
+                      <li>Cursos y materias</li>
+                      <li>Profesores y sus asignaciones</li>
+                      <li>Lista de alumnos</li>
+                      <li>Configuración del sistema</li>
+                    </ul>
+                  </div>
+                </CardContent>
+                <CardFooter>
+                  <Button variant="destructive" onClick={handleClearGestion} disabled={isClearing}>
+                    {isClearing ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Limpiando...
+                      </>
+                    ) : (
+                      <>
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Limpiar para Nueva Gestión
+                      </>
+                    )}
+                  </Button>
+                </CardFooter>
+              </Card>
+            </div>
           </TabsContent>
         </Tabs>
       </div>
