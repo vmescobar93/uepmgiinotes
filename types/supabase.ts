@@ -205,7 +205,6 @@ export interface Database {
       agrupaciones_materias: {
         Row: {
           id: number
-          id_area: number
           nombre_grupo: string
           nombre_mostrar: string
           curso_corto: string | null
@@ -214,7 +213,6 @@ export interface Database {
         }
         Insert: {
           id?: number
-          id_area: number
           nombre_grupo: string
           nombre_mostrar: string
           curso_corto?: string | null
@@ -223,7 +221,6 @@ export interface Database {
         }
         Update: {
           id?: number
-          id_area?: number
           nombre_grupo?: string
           nombre_mostrar?: string
           curso_corto?: string | null

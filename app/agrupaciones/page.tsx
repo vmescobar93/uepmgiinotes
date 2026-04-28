@@ -43,12 +43,10 @@ import { useToast } from "@/components/ui/use-toast"
 import type { Database } from "@/types/supabase"
 
 type Curso = Database["public"]["Tables"]["cursos"]["Row"]
-type Area = Database["public"]["Tables"]["areas"]["Row"]
 type Materia = Database["public"]["Tables"]["materias"]["Row"]
 type Agrupacion = Database["public"]["Tables"]["agrupaciones_materias"]["Row"]
 
 interface AgrupacionConDetalles extends Agrupacion {
-  area?: Area
   materia?: Materia
 }
 
@@ -56,7 +54,6 @@ export default function AgrupacionesPage() {
   const { gestionActual } = useGestion()
   const { toast } = useToast()
   const [cursos, setCursos] = useState<Curso[]>([])
-  const [areas, setAreas] = useState<Area[]>([])
   const [materias, setMaterias] = useState<Materia[]>([])
   const [agrupaciones, setAgrupaciones] = useState<AgrupacionConDetalles[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -70,7 +67,6 @@ export default function AgrupacionesPage() {
   
   // Form state
   const [formData, setFormData] = useState({
-    id_area: "",
     nombre_grupo: "",
     nombre_mostrar: "",
     curso_corto: "",
@@ -85,17 +81,12 @@ export default function AgrupacionesPage() {
     setIsLoading(true)
     
     try {
-      const [cursosRes, areasRes, materiasRes, agrupacionesRes] = await Promise.all([
+      const [cursosRes, materiasRes, agrupacionesRes] = await Promise.all([
         supabase
           .from("cursos")
           .select("*")
           .eq("gestion_id", gestionActual.id)
           .order("nombre_corto"),
-        supabase
-          .from("areas")
-          .select("*")
-          .eq("gestion_id", gestionActual.id)
-          .order("orden"),
         supabase
           .from("materias")
           .select("*")
@@ -113,13 +104,11 @@ export default function AgrupacionesPage() {
           setSelectedCurso(cursosRes.data[0].nombre_corto)
         }
       }
-      if (areasRes.data) setAreas(areasRes.data)
       if (materiasRes.data) setMaterias(materiasRes.data)
       
-      if (agrupacionesRes.data && areasRes.data && materiasRes.data) {
+      if (agrupacionesRes.data && materiasRes.data) {
         const agrupacionesConDetalles = agrupacionesRes.data.map((a) => ({
           ...a,
-          area: areasRes.data.find((ar) => ar.id === String(a.id_area)),
           materia: materiasRes.data.find((m) => m.codigo === a.materia_codigo),
         }))
         setAgrupaciones(agrupacionesConDetalles)
@@ -144,13 +133,12 @@ export default function AgrupacionesPage() {
       acc[agr.nombre_grupo] = {
         nombre_grupo: agr.nombre_grupo,
         nombre_mostrar: agr.nombre_mostrar,
-        area: agr.area,
         items: [],
       }
     }
     acc[agr.nombre_grupo].items.push(agr)
     return acc
-  }, {} as Record<string, { nombre_grupo: string; nombre_mostrar: string; area?: Area; items: AgrupacionConDetalles[] }>)
+  }, {} as Record<string, { nombre_grupo: string; nombre_mostrar: string; items: AgrupacionConDetalles[] }>)
 
   // Get materias for selected curso
   const materiasDelCurso = materias.filter((m) => m.curso_corto === selectedCurso)
@@ -158,7 +146,6 @@ export default function AgrupacionesPage() {
   const openCreateDialog = () => {
     setEditingAgrupacion(null)
     setFormData({
-      id_area: "",
       nombre_grupo: "",
       nombre_mostrar: "",
       curso_corto: selectedCurso,
@@ -170,7 +157,6 @@ export default function AgrupacionesPage() {
   const openEditDialog = (agrupacion: AgrupacionConDetalles) => {
     setEditingAgrupacion(agrupacion)
     setFormData({
-      id_area: String(agrupacion.id_area),
       nombre_grupo: agrupacion.nombre_grupo,
       nombre_mostrar: agrupacion.nombre_mostrar,
       curso_corto: agrupacion.curso_corto || selectedCurso,
@@ -189,7 +175,6 @@ export default function AgrupacionesPage() {
         const { error } = await supabase
           .from("agrupaciones_materias")
           .update({
-            id_area: parseInt(formData.id_area),
             nombre_grupo: formData.nombre_grupo,
             nombre_mostrar: formData.nombre_mostrar,
             curso_corto: formData.curso_corto,
@@ -202,7 +187,6 @@ export default function AgrupacionesPage() {
       } else {
         // Create
         const { error } = await supabase.from("agrupaciones_materias").insert({
-          id_area: parseInt(formData.id_area),
           nombre_grupo: formData.nombre_grupo,
           nombre_mostrar: formData.nombre_mostrar,
           curso_corto: formData.curso_corto,
@@ -309,7 +293,6 @@ export default function AgrupacionesPage() {
                             <CardTitle className="text-base">{grupo.nombre_mostrar}</CardTitle>
                             <CardDescription className="text-xs">
                               Grupo: {grupo.nombre_grupo}
-                              {grupo.area && ` | Area: ${grupo.area.nombre}`}
                             </CardDescription>
                           </div>
                         </div>
@@ -404,24 +387,6 @@ export default function AgrupacionesPage() {
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
-              <Label htmlFor="area">Area</Label>
-              <Select
-                value={formData.id_area}
-                onValueChange={(v) => setFormData({ ...formData, id_area: v })}
-              >
-                <SelectTrigger id="area">
-                  <SelectValue placeholder="Seleccionar area" />
-                </SelectTrigger>
-                <SelectContent>
-                  {areas.map((area) => (
-                    <SelectItem key={area.id} value={area.id}>
-                      {area.nombre}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid gap-2">
               <Label htmlFor="nombre_grupo">Nombre del Grupo</Label>
               <Input
                 id="nombre_grupo"
@@ -458,7 +423,7 @@ export default function AgrupacionesPage() {
               </Select>
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="materia">Materia (opcional)</Label>
+              <Label htmlFor="materia">Materia</Label>
               <Select
                 value={formData.materia_codigo}
                 onValueChange={(v) => setFormData({ ...formData, materia_codigo: v })}
@@ -467,10 +432,9 @@ export default function AgrupacionesPage() {
                   <SelectValue placeholder="Seleccionar materia" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Sin materia especifica</SelectItem>
                   {materiasDelCurso.map((materia) => (
                     <SelectItem key={materia.codigo} value={materia.codigo}>
-                      {materia.nombre_corto}
+                      {materia.nombre_corto} - {materia.nombre_largo}
                     </SelectItem>
                   ))}
                 </SelectContent>
