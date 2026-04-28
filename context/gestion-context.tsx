@@ -74,6 +74,8 @@ export function GestionProvider({ children }: { children: ReactNode }) {
   const setGestionActual = (gestion: Gestion) => {
     setGestionActualState(gestion)
     localStorage.setItem(GESTION_STORAGE_KEY, gestion.id.toString())
+    // Forzar reload para que todas las páginas recarguen con la nueva gestión
+    window.location.reload()
   }
 
   const refetchGestiones = async () => {
