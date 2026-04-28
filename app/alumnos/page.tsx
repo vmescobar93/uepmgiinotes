@@ -32,7 +32,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Switch } from "@/components/ui/switch"
 import { Loader2, Plus, Search, Upload, MoreHorizontal, Pencil, Trash2, ArrowRightLeft } from "lucide-react"
-import { supabase } from "@/lib/supabase"
+import { supabase, sortCursos } from "@/lib/supabase"
 import { useGestion } from "@/context/gestion-context"
 import { useToast } from "@/components/ui/use-toast"
 import { CsvImportDialog } from "@/components/csv-import-dialog"
@@ -109,7 +109,7 @@ export default function AlumnosPage() {
       ])
 
       if (alumnosRes.data) setAlumnos(alumnosRes.data)
-      if (cursosRes.data) setCursos(cursosRes.data)
+      if (cursosRes.data) setCursos(sortCursos(cursosRes.data))
     } catch (error) {
       console.error("Error al obtener datos:", error)
     } finally {

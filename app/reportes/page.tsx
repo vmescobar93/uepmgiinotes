@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { MainLayout } from "@/components/layout/main-layout"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useToast } from "@/components/ui/use-toast"
-import { supabase } from "@/lib/supabase"
+import { supabase, sortCursos } from "@/lib/supabase"
 import { useGestion } from "@/context/gestion-context"
 import { CentralizadorInterno } from "@/components/reportes/centralizador-interno"
 import { CentralizadorMinedu } from "@/components/reportes/centralizador-minedu"
@@ -83,7 +83,7 @@ export default function ReportesPage() {
         .select("*")
         .eq("gestion_id", gestionActual.id)
         .order("nombre_corto")
-      if (data) setCursos(data)
+      if (data) setCursos(sortCursos(data))
     }
     fetchCursos()
   }, [gestionActual])

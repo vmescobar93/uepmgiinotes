@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/select"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Loader2, Plus, X, Layers, Pencil, Trash2, BookOpen } from "lucide-react"
-import { supabase } from "@/lib/supabase"
+import { supabase, sortCursos } from "@/lib/supabase"
 import { useGestion } from "@/context/gestion-context"
 import { useToast } from "@/components/ui/use-toast"
 import type { Database } from "@/types/supabase"
@@ -102,9 +102,10 @@ export default function AgrupacionesPage() {
       ])
 
       if (cursosRes.data) {
-        setCursos(cursosRes.data)
-        if (!selectedCurso && cursosRes.data.length > 0) {
-          setSelectedCurso(cursosRes.data[0].nombre_corto)
+        const sortedCursos = sortCursos(cursosRes.data)
+        setCursos(sortedCursos)
+        if (!selectedCurso && sortedCursos.length > 0) {
+          setSelectedCurso(sortedCursos[0].nombre_corto)
         }
       }
       if (materiasRes.data) setMaterias(materiasRes.data)

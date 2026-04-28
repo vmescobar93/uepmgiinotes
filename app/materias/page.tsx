@@ -32,7 +32,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Loader2, Plus, Search, Upload, MoreHorizontal, Pencil, Trash2, BookOpen, Grid3X3, List } from "lucide-react"
-import { supabase } from "@/lib/supabase"
+import { supabase, sortCursos } from "@/lib/supabase"
 import { useGestion } from "@/context/gestion-context"
 import { useToast } from "@/components/ui/use-toast"
 import { CsvImportDialog } from "@/components/csv-import-dialog"
@@ -111,10 +111,11 @@ export default function MateriasPage() {
 
       if (materiasRes.data) setMaterias(materiasRes.data)
       if (cursosRes.data) {
-        setCursos(cursosRes.data)
+        const sortedCursos = sortCursos(cursosRes.data)
+        setCursos(sortedCursos)
         // Seleccionar el primer curso por defecto
-        if (cursosRes.data.length > 0 && !selectedCurso) {
-          setSelectedCurso(cursosRes.data[0].nombre_corto)
+        if (sortedCursos.length > 0 && !selectedCurso) {
+          setSelectedCurso(sortedCursos[0].nombre_corto)
         }
       }
       if (areasRes.data) setAreas(areasRes.data)
