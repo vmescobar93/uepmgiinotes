@@ -37,13 +37,17 @@ export function GestionProvider({ children }: { children: ReactNode }) {
 
       if (error) {
         console.error("Error fetching gestiones:", error)
+        setIsLoading(false)
         return
       }
 
       setGestiones(data || [])
 
-      // Intentar cargar la gestión guardada en localStorage
-      const savedGestionId = localStorage.getItem(GESTION_STORAGE_KEY)
+      // Intentar cargar la gestión guardada en localStorage (solo en cliente)
+      let savedGestionId: string | null = null
+      if (typeof window !== "undefined") {
+        savedGestionId = localStorage.getItem(GESTION_STORAGE_KEY)
+      }
       
       if (savedGestionId && data) {
         const savedGestion = data.find(g => g.id === parseInt(savedGestionId))
@@ -58,7 +62,9 @@ export function GestionProvider({ children }: { children: ReactNode }) {
       if (data && data.length > 0) {
         const gestionActiva = data.find(g => g.activa) || data[0]
         setGestionActualState(gestionActiva)
-        localStorage.setItem(GESTION_STORAGE_KEY, gestionActiva.id.toString())
+        if (typeof window !== "undefined") {
+          localStorage.setItem(GESTION_STORAGE_KEY, gestionActiva.id.toString())
+        }
       }
     } catch (error) {
       console.error("Error:", error)
@@ -73,9 +79,11 @@ export function GestionProvider({ children }: { children: ReactNode }) {
 
   const setGestionActual = (gestion: Gestion) => {
     setGestionActualState(gestion)
-    localStorage.setItem(GESTION_STORAGE_KEY, gestion.id.toString())
-    // Forzar reload para que todas las páginas recarguen con la nueva gestión
-    window.location.reload()
+    if (typeof window !== "undefined") {
+      localStorage.setItem(GESTION_STORAGE_KEY, gestion.id.toString())
+      // Forzar reload para que todas las páginas recarguen con la nueva gestión
+      window.location.reload()
+    }
   }
 
   const refetchGestiones = async () => {
