@@ -8,20 +8,28 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Loader2, Plus, Search } from "lucide-react"
 import { supabase } from "@/lib/supabase"
+import { useGestion } from "@/context/gestion-context"
 import type { Database } from "@/types/supabase"
 import Link from "next/link"
 
 type Materia = Database["public"]["Tables"]["materias"]["Row"]
 
 export default function MateriasPage() {
+  const { gestionActual } = useGestion()
   const [materias, setMaterias] = useState<Materia[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState("")
 
   useEffect(() => {
     const fetchMaterias = async () => {
+      if (!gestionActual) return
+      
       try {
-        const { data, error } = await supabase.from("materias").select("*").order("codigo", { ascending: true })
+        const { data, error } = await supabase
+          .from("materias")
+          .select("*")
+          .eq("gestion_id", gestionActual.id)
+          .order("codigo", { ascending: true })
 
         if (error) throw error
         setMaterias(data || [])
@@ -33,7 +41,7 @@ export default function MateriasPage() {
     }
 
     fetchMaterias()
-  }, [])
+  }, [gestionActual])
 
   const filteredMaterias = materias.filter(
     (materia) =>

@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/components/ui/use-toast"
 import { Loader2, Save } from "lucide-react"
 import { supabase } from "@/lib/supabase"
+import { useGestion } from "@/context/gestion-context"
 import type { Database } from "@/types/supabase"
 import { CalificacionesReporte } from "@/components/reportes/calificaciones"
 import { TodasCalificacionesReporte } from "@/components/reportes/todas-calificaciones"
@@ -32,12 +33,20 @@ export default function CalificacionesPage() {
   const [isSaving, setIsSaving] = useState(false)
   const [hasPendingChanges, setHasPendingChanges] = useState(false) // Añadir estado para rastrear cambios pendientes
   const { toast } = useToast()
+  const { gestionActual } = useGestion()
 
   // Fetch profesores activos
   useEffect(() => {
     const fetchProfesores = async () => {
+      if (!gestionActual) return
+      
       try {
-        const { data } = await supabase.from("profesores").select("*").eq("activo", true).order("apellidos")
+        const { data } = await supabase
+          .from("profesores")
+          .select("*")
+          .eq("gestion_id", gestionActual.id)
+          .eq("activo", true)
+          .order("apellidos")
 
         if (data) setProfesores(data)
       } catch (error) {
@@ -46,12 +55,12 @@ export default function CalificacionesPage() {
     }
 
     fetchProfesores()
-  }, [])
+  }, [gestionActual])
 
   // Fetch materias por profesor
   useEffect(() => {
     const fetchMaterias = async () => {
-      if (!selectedProfesor) {
+      if (!selectedProfesor || !gestionActual) {
         setMaterias([])
         return
       }
@@ -61,6 +70,7 @@ export default function CalificacionesPage() {
           .from("materias_profesores")
           .select("codigo_materia")
           .eq("cod_moodle_profesor", selectedProfesor)
+          .eq("gestion_id", gestionActual.id)
 
         if (!materiasProfesor || materiasProfesor.length === 0) {
           setMaterias([])
@@ -74,7 +84,11 @@ export default function CalificacionesPage() {
           return
         }
 
-        const { data } = await supabase.from("materias").select("*").in("codigo", codigosMaterias)
+        const { data } = await supabase
+          .from("materias")
+          .select("*")
+          .in("codigo", codigosMaterias)
+          .eq("gestion_id", gestionActual.id)
 
         if (data) setMaterias(data)
       } catch (error) {
@@ -83,7 +97,7 @@ export default function CalificacionesPage() {
     }
 
     fetchMaterias()
-  }, [selectedProfesor])
+  }, [selectedProfesor, gestionActual])
 
   // Fetch alumnos y calificaciones
   useEffect(() => {

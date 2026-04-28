@@ -9,20 +9,28 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Loader2, Plus, Search } from "lucide-react"
 import { supabase } from "@/lib/supabase"
+import { useGestion } from "@/context/gestion-context"
 import type { Database } from "@/types/supabase"
 import Link from "next/link"
 
 type Alumno = Database["public"]["Tables"]["alumnos"]["Row"]
 
 export default function AlumnosPage() {
+  const { gestionActual } = useGestion()
   const [alumnos, setAlumnos] = useState<Alumno[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState("")
 
   useEffect(() => {
     const fetchAlumnos = async () => {
+      if (!gestionActual) return
+      
       try {
-        const { data, error } = await supabase.from("alumnos").select("*").order("apellidos", { ascending: true })
+        const { data, error } = await supabase
+          .from("alumnos")
+          .select("*")
+          .eq("gestion_id", gestionActual.id)
+          .order("apellidos", { ascending: true })
 
         if (error) throw error
         setAlumnos(data || [])
@@ -34,7 +42,7 @@ export default function AlumnosPage() {
     }
 
     fetchAlumnos()
-  }, [])
+  }, [gestionActual])
 
   const filteredAlumnos = alumnos.filter(
     (alumno) =>

@@ -10,7 +10,9 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useToast } from "@/components/ui/use-toast"
-import { Loader2, HelpCircle, Download, Upload, Trash2, AlertTriangle, FileSpreadsheet, FileText } from "lucide-react"
+import { Loader2, HelpCircle, Download, Upload, Trash2, AlertTriangle, FileSpreadsheet, FileText, Calendar, Copy, Plus, Check } from "lucide-react"
+import { useGestion, type Gestion } from "@/context/gestion-context"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { LogoPreview } from "@/components/configuracion/logo-preview"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -51,6 +53,24 @@ export default function ConfiguracionPage() {
   const [selectedTable, setSelectedTable] = useState<string>("all")
   const [exportFormat, setExportFormat] = useState<string>("xlsx")
   const [isExportingTable, setIsExportingTable] = useState(false)
+  
+  // Estado para gestiones
+  const { gestionActual, gestiones, refetchGestiones } = useGestion()
+  const [newGestionAnio, setNewGestionAnio] = useState<number>(new Date().getFullYear() + 1)
+  const [sourceGestionId, setSourceGestionId] = useState<string>("")
+  const [isCopyingGestion, setIsCopyingGestion] = useState(false)
+  const [isCreatingGestion, setIsCreatingGestion] = useState(false)
+  const [copyOptions, setCopyOptions] = useState({
+    cursos: true,
+    materias: true,
+    areas: true,
+    profesores: true,
+    alumnos: true,
+    promoverAlumnos: true,
+    asignaciones: true,
+    agrupaciones: true
+  })
+  
   const { toast } = useToast()
 
   const TABLES = [
@@ -371,6 +391,112 @@ export default function ConfiguracionPage() {
     }
   }
 
+  const handleCreateGestion = async () => {
+    setIsCreatingGestion(true)
+    try {
+      const response = await fetch("/api/gestiones", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ anio: newGestionAnio }),
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || "Error al crear gestión")
+      }
+
+      toast({
+        title: "Gestión creada",
+        description: `Se ha creado la Gestión ${newGestionAnio}`,
+      })
+
+      await refetchGestiones()
+      setNewGestionAnio(newGestionAnio + 1)
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "No se pudo crear la gestión",
+        variant: "destructive",
+      })
+    } finally {
+      setIsCreatingGestion(false)
+    }
+  }
+
+  const handleCopyGestion = async () => {
+    if (!sourceGestionId) {
+      toast({
+        title: "Error",
+        description: "Seleccione una gestión de origen",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setIsCopyingGestion(true)
+    try {
+      const response = await fetch("/api/gestiones/copy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sourceGestionId: parseInt(sourceGestionId),
+          newAnio: newGestionAnio,
+          copyOptions
+        }),
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || "Error al copiar gestión")
+      }
+
+      toast({
+        title: "Gestión copiada",
+        description: `Se ha creado la Gestión ${newGestionAnio} con ${result.stats.cursos} cursos, ${result.stats.materias} materias, ${result.stats.profesores} profesores y ${result.stats.alumnos} alumnos.`,
+      })
+
+      await refetchGestiones()
+      setNewGestionAnio(newGestionAnio + 1)
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "No se pudo copiar la gestión",
+        variant: "destructive",
+      })
+    } finally {
+      setIsCopyingGestion(false)
+    }
+  }
+
+  const handleSetGestionActiva = async (gestionId: number) => {
+    try {
+      const response = await fetch("/api/gestiones", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: gestionId, activa: true }),
+      })
+
+      if (!response.ok) {
+        throw new Error("Error al actualizar gestión")
+      }
+
+      toast({
+        title: "Gestión actualizada",
+        description: "La gestión activa ha sido actualizada",
+      })
+
+      await refetchGestiones()
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      })
+    }
+  }
+
   const handleClearGestion = async () => {
     const confirmClear = window.confirm(
       "¿Está seguro de limpiar los datos de la gestión actual?\n\n" +
@@ -458,7 +584,8 @@ export default function ConfiguracionPage() {
           <TabsList className="mb-4">
             <TabsTrigger value="general">General</TabsTrigger>
             <TabsTrigger value="apariencia">Apariencia</TabsTrigger>
-            <TabsTrigger value="backup">Backup / Gestión</TabsTrigger>
+            <TabsTrigger value="gestiones">Gestiones</TabsTrigger>
+            <TabsTrigger value="backup">Backup / Datos</TabsTrigger>
           </TabsList>
 
           <TabsContent value="general">
@@ -738,8 +865,231 @@ export default function ConfiguracionPage() {
                 </div>
               </CardContent>
             </Card>
-          </TabsContent>
+</TabsContent>
 
+          <TabsContent value="gestiones">
+            <div className="space-y-6">
+              {/* Lista de Gestiones */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Calendar className="h-5 w-5" />
+                    Gestiones Registradas
+                  </CardTitle>
+                  <CardDescription>
+                    Gestiones (años escolares) disponibles en el sistema
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {gestiones.map((gestion) => (
+                      <div
+                        key={gestion.id}
+                        className={`flex items-center justify-between rounded-lg border p-3 ${
+                          gestion.activa ? "border-primary bg-primary/5" : ""
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <Calendar className="h-4 w-4 text-muted-foreground" />
+                          <div>
+                            <p className="font-medium">{gestion.nombre}</p>
+                            <p className="text-sm text-muted-foreground">Año {gestion.anio}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {gestion.activa ? (
+                            <span className="flex items-center gap-1 rounded bg-primary/10 px-2 py-1 text-xs font-medium text-primary">
+                              <Check className="h-3 w-3" />
+                              Activa
+                            </span>
+                          ) : (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleSetGestionActiva(gestion.id)}
+                            >
+                              Establecer como activa
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                    {gestiones.length === 0 && (
+                      <p className="text-center text-sm text-muted-foreground py-4">
+                        No hay gestiones registradas
+                      </p>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Crear Nueva Gestión */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Plus className="h-5 w-5" />
+                    Crear Nueva Gestión
+                  </CardTitle>
+                  <CardDescription>
+                    Crea una nueva gestión vacía o copia datos de una gestión existente
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="new_gestion_anio">Año de la nueva gestión</Label>
+                      <Input
+                        id="new_gestion_anio"
+                        type="number"
+                        min={2020}
+                        max={2100}
+                        value={newGestionAnio}
+                        onChange={(e) => setNewGestionAnio(parseInt(e.target.value))}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="source_gestion">Copiar datos desde (opcional)</Label>
+                      <Select value={sourceGestionId} onValueChange={setSourceGestionId}>
+                        <SelectTrigger id="source_gestion">
+                          <SelectValue placeholder="Crear vacía (sin copiar)" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="empty">Crear vacía (sin copiar)</SelectItem>
+                          {gestiones.map((gestion) => (
+                            <SelectItem key={gestion.id} value={gestion.id.toString()}>
+                              {gestion.nombre}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  {sourceGestionId && sourceGestionId !== "empty" && (
+                    <div className="space-y-4 rounded-lg border p-4">
+                      <p className="text-sm font-medium">Opciones de copia</p>
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <div className="flex items-center space-x-2">
+                          <Checkbox
+                            id="copy_cursos"
+                            checked={copyOptions.cursos}
+                            onCheckedChange={(checked) =>
+                              setCopyOptions((prev) => ({ ...prev, cursos: checked as boolean }))
+                            }
+                          />
+                          <Label htmlFor="copy_cursos" className="text-sm">Cursos</Label>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <Checkbox
+                            id="copy_materias"
+                            checked={copyOptions.materias}
+                            onCheckedChange={(checked) =>
+                              setCopyOptions((prev) => ({ ...prev, materias: checked as boolean }))
+                            }
+                          />
+                          <Label htmlFor="copy_materias" className="text-sm">Materias</Label>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <Checkbox
+                            id="copy_areas"
+                            checked={copyOptions.areas}
+                            onCheckedChange={(checked) =>
+                              setCopyOptions((prev) => ({ ...prev, areas: checked as boolean }))
+                            }
+                          />
+                          <Label htmlFor="copy_areas" className="text-sm">Áreas</Label>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <Checkbox
+                            id="copy_profesores"
+                            checked={copyOptions.profesores}
+                            onCheckedChange={(checked) =>
+                              setCopyOptions((prev) => ({ ...prev, profesores: checked as boolean }))
+                            }
+                          />
+                          <Label htmlFor="copy_profesores" className="text-sm">Profesores</Label>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <Checkbox
+                            id="copy_asignaciones"
+                            checked={copyOptions.asignaciones}
+                            onCheckedChange={(checked) =>
+                              setCopyOptions((prev) => ({ ...prev, asignaciones: checked as boolean }))
+                            }
+                          />
+                          <Label htmlFor="copy_asignaciones" className="text-sm">Asignaciones Profesor-Materia</Label>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <Checkbox
+                            id="copy_agrupaciones"
+                            checked={copyOptions.agrupaciones}
+                            onCheckedChange={(checked) =>
+                              setCopyOptions((prev) => ({ ...prev, agrupaciones: checked as boolean }))
+                            }
+                          />
+                          <Label htmlFor="copy_agrupaciones" className="text-sm">Agrupaciones de Materias</Label>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <Checkbox
+                            id="copy_alumnos"
+                            checked={copyOptions.alumnos}
+                            onCheckedChange={(checked) =>
+                              setCopyOptions((prev) => ({ ...prev, alumnos: checked as boolean }))
+                            }
+                          />
+                          <Label htmlFor="copy_alumnos" className="text-sm">Alumnos</Label>
+                        </div>
+                        {copyOptions.alumnos && (
+                          <div className="flex items-center space-x-2">
+                            <Checkbox
+                              id="promover_alumnos"
+                              checked={copyOptions.promoverAlumnos}
+                              onCheckedChange={(checked) =>
+                                setCopyOptions((prev) => ({ ...prev, promoverAlumnos: checked as boolean }))
+                              }
+                            />
+                            <Label htmlFor="promover_alumnos" className="text-sm">Promover alumnos al siguiente curso</Label>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+                <CardFooter className="flex gap-2">
+                  {(!sourceGestionId || sourceGestionId === "empty") ? (
+                    <Button onClick={handleCreateGestion} disabled={isCreatingGestion}>
+                      {isCreatingGestion ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Creando...
+                        </>
+                      ) : (
+                        <>
+                          <Plus className="mr-2 h-4 w-4" />
+                          Crear Gestión Vacía
+                        </>
+                      )}
+                    </Button>
+                  ) : (
+                    <Button onClick={handleCopyGestion} disabled={isCopyingGestion}>
+                      {isCopyingGestion ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Copiando...
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="mr-2 h-4 w-4" />
+                          Copiar y Crear Gestión {newGestionAnio}
+                        </>
+                      )}
+                    </Button>
+                  )}
+                </CardFooter>
+              </Card>
+            </div>
+          </TabsContent>
+          
           <TabsContent value="backup">
             <div className="space-y-6">
               {/* Exportar Backup */}

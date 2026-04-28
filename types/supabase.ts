@@ -3,6 +3,29 @@ export type Json = string | number | boolean | null | { [key: string]: Json | un
 export interface Database {
   public: {
     Tables: {
+      gestiones: {
+        Row: {
+          id: number
+          anio: number
+          nombre: string
+          activa: boolean
+          created_at: string
+        }
+        Insert: {
+          id?: number
+          anio: number
+          nombre: string
+          activa?: boolean
+          created_at?: string
+        }
+        Update: {
+          id?: number
+          anio?: number
+          nombre?: string
+          activa?: boolean
+          created_at?: string
+        }
+      }
       alumnos: {
         Row: {
           cod_moodle: string
@@ -13,6 +36,7 @@ export interface Database {
           rude: string | null
           activo: boolean
           fecha_retiro: string | null
+          gestion_id: number
         }
         Insert: {
           cod_moodle: string
@@ -23,6 +47,7 @@ export interface Database {
           rude?: string | null
           activo?: boolean
           fecha_retiro?: string | null
+          gestion_id: number
         }
         Update: {
           cod_moodle?: string
@@ -33,6 +58,7 @@ export interface Database {
           rude?: string | null
           activo?: boolean
           fecha_retiro?: string | null
+          gestion_id?: number
         }
       }
       profesores: {
@@ -42,6 +68,7 @@ export interface Database {
           apellidos: string
           ci: string | null
           activo: boolean
+          gestion_id: number
         }
         Insert: {
           cod_moodle: string
@@ -49,6 +76,7 @@ export interface Database {
           apellidos: string
           ci?: string | null
           activo?: boolean
+          gestion_id: number
         }
         Update: {
           cod_moodle?: string
@@ -56,6 +84,7 @@ export interface Database {
           apellidos?: string
           ci?: string | null
           activo?: boolean
+          gestion_id?: number
         }
       }
       cursos: {
@@ -63,16 +92,19 @@ export interface Database {
           nombre_corto: string
           nombre_largo: string
           nivel: string
+          gestion_id: number
         }
         Insert: {
           nombre_corto: string
           nombre_largo: string
           nivel: string
+          gestion_id: number
         }
         Update: {
           nombre_corto?: string
           nombre_largo?: string
           nivel?: string
+          gestion_id?: number
         }
       }
       materias: {
@@ -83,6 +115,7 @@ export interface Database {
           curso_corto: string | null
           id_area?: string | null
           orden: number | null
+          gestion_id: number
         }
         Insert: {
           codigo: string
@@ -91,6 +124,7 @@ export interface Database {
           curso_corto?: string | null
           id_area?: string | null
           orden?: number | null
+          gestion_id: number
         }
         Update: {
           codigo?: string
@@ -99,6 +133,7 @@ export interface Database {
           curso_corto?: string | null
           id_area?: string | null
           orden?: number | null
+          gestion_id?: number
         }
       }
       areas: {
@@ -106,16 +141,19 @@ export interface Database {
           id: string
           nombre: string
           orden: number
+          gestion_id: number
         }
         Insert: {
           id?: string
           nombre: string
           orden: number
+          gestion_id: number
         }
         Update: {
           id?: string
           nombre?: string
           orden?: number
+          gestion_id?: number
         }
       }
       materias_profesores: {
@@ -123,16 +161,19 @@ export interface Database {
           id: number
           cod_moodle_profesor: string | null
           codigo_materia: string | null
+          gestion_id: number
         }
         Insert: {
           id?: number
           cod_moodle_profesor?: string | null
           codigo_materia?: string | null
+          gestion_id: number
         }
         Update: {
           id?: number
           cod_moodle_profesor?: string | null
           codigo_materia?: string | null
+          gestion_id?: number
         }
       }
       calificaciones: {
@@ -142,6 +183,7 @@ export interface Database {
           materia_id: string | null
           trimestre: number | null
           nota: number | null
+          gestion_id: number
         }
         Insert: {
           id?: number
@@ -149,6 +191,7 @@ export interface Database {
           materia_id?: string | null
           trimestre?: number | null
           nota?: number | null
+          gestion_id: number
         }
         Update: {
           id?: number
@@ -156,6 +199,7 @@ export interface Database {
           materia_id?: string | null
           trimestre?: number | null
           nota?: number | null
+          gestion_id?: number
         }
       }
       agrupaciones_materias: {
@@ -166,6 +210,7 @@ export interface Database {
           nombre_mostrar: string
           curso_corto: string | null
           materia_codigo: string | null
+          gestion_id: number
         }
         Insert: {
           id?: number
@@ -174,6 +219,7 @@ export interface Database {
           nombre_mostrar: string
           curso_corto?: string | null
           materia_codigo?: string | null
+          gestion_id: number
         }
         Update: {
           id?: number
@@ -182,6 +228,7 @@ export interface Database {
           nombre_mostrar?: string
           curso_corto?: string | null
           materia_codigo?: string | null
+          gestion_id?: number
         }
       }
       configuracion: {

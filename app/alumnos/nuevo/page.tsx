@@ -12,11 +12,14 @@ import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/componen
 import { useToast } from "@/components/ui/use-toast"
 import { Loader2, ArrowLeft } from "lucide-react"
 import { supabase } from "@/lib/supabase"
+import { useGestion } from "@/context/gestion-context"
 import Link from "next/link"
 import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { useEffect } from "react"
 
 export default function NuevoAlumnoPage() {
+  const { gestionActual } = useGestion()
   const [formData, setFormData] = useState({
     cod_moodle: "",
     nombres: "",
@@ -31,13 +34,17 @@ export default function NuevoAlumnoPage() {
   const router = useRouter()
   const { toast } = useToast()
 
-  useState(() => {
+  useEffect(() => {
     const fetchCursos = async () => {
-      const { data } = await supabase.from("cursos").select("nombre_corto, nombre_largo")
+      if (!gestionActual) return
+      const { data } = await supabase
+        .from("cursos")
+        .select("nombre_corto, nombre_largo")
+        .eq("gestion_id", gestionActual.id)
       if (data) setCursos(data)
     }
     fetchCursos()
-  }, [])
+  }, [gestionActual])
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target
@@ -54,10 +61,14 @@ export default function NuevoAlumnoPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!gestionActual) return
     setIsLoading(true)
 
     try {
-      const { error } = await supabase.from("alumnos").insert([formData])
+      const { error } = await supabase.from("alumnos").insert([{
+        ...formData,
+        gestion_id: gestionActual.id
+      }])
 
       if (error) throw error
 

@@ -8,20 +8,28 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Loader2, Plus, Search } from "lucide-react"
 import { supabase } from "@/lib/supabase"
+import { useGestion } from "@/context/gestion-context"
 import type { Database } from "@/types/supabase"
 import Link from "next/link"
 
 type Curso = Database["public"]["Tables"]["cursos"]["Row"]
 
 export default function CursosPage() {
+  const { gestionActual } = useGestion()
   const [cursos, setCursos] = useState<Curso[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState("")
 
   useEffect(() => {
     const fetchCursos = async () => {
+      if (!gestionActual) return
+      
       try {
-        const { data, error } = await supabase.from("cursos").select("*").order("nombre_corto", { ascending: true })
+        const { data, error } = await supabase
+          .from("cursos")
+          .select("*")
+          .eq("gestion_id", gestionActual.id)
+          .order("nombre_corto", { ascending: true })
 
         if (error) throw error
         setCursos(data || [])
@@ -33,7 +41,7 @@ export default function CursosPage() {
     }
 
     fetchCursos()
-  }, [])
+  }, [gestionActual])
 
   const filteredCursos = cursos.filter(
     (curso) =>
