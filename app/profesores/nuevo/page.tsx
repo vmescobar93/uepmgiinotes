@@ -12,12 +12,10 @@ import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/componen
 import { useToast } from "@/components/ui/use-toast"
 import { Loader2, ArrowLeft } from "lucide-react"
 import { supabase } from "@/lib/supabase"
-import { useGestion } from "@/context/gestion-context"
 import Link from "next/link"
 import { Switch } from "@/components/ui/switch"
 
 export default function NuevoProfesorPage() {
-  const { gestionActual } = useGestion()
   const [formData, setFormData] = useState({
     cod_moodle: "",
     nombre: "",
@@ -40,14 +38,10 @@ export default function NuevoProfesorPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!gestionActual) return
     setIsLoading(true)
 
     try {
-      const { error } = await supabase.from("profesores").insert([{
-        ...formData,
-        gestion_id: gestionActual.id
-      }])
+      const { error } = await supabase.from("profesores").insert([formData])
 
       if (error) throw error
 
