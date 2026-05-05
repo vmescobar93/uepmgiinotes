@@ -4,9 +4,11 @@ import { useEffect, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { MainLayout } from "@/components/layout/main-layout"
 import { supabase } from "@/lib/supabase"
+import { useGestion } from "@/context/gestion-context"
 import { Loader2 } from "lucide-react"
 
 export default function DashboardPage() {
+  const { gestionActual } = useGestion()
   const [stats, setStats] = useState({
     totalAlumnos: 0,
     totalProfesores: 0,
@@ -17,18 +19,32 @@ export default function DashboardPage() {
 
   useEffect(() => {
     const fetchStats = async () => {
+      if (!gestionActual) return
+      
       try {
-        // Obtener total de alumnos
-        const { count: alumnosCount } = await supabase.from("alumnos").select("*", { count: "exact", head: true })
+        // Obtener total de alumnos de la gestión actual
+        const { count: alumnosCount } = await supabase
+          .from("alumnos")
+          .select("*", { count: "exact", head: true })
+          .eq("gestion_id", gestionActual.id)
 
-        // Obtener total de profesores
-        const { count: profesoresCount } = await supabase.from("profesores").select("*", { count: "exact", head: true })
+        // Obtener total de profesores de la gestión actual
+        const { count: profesoresCount } = await supabase
+          .from("profesores")
+          .select("*", { count: "exact", head: true })
+          .eq("gestion_id", gestionActual.id)
 
-        // Obtener total de cursos
-        const { count: cursosCount } = await supabase.from("cursos").select("*", { count: "exact", head: true })
+        // Obtener total de cursos de la gestión actual
+        const { count: cursosCount } = await supabase
+          .from("cursos")
+          .select("*", { count: "exact", head: true })
+          .eq("gestion_id", gestionActual.id)
 
-        // Obtener total de materias
-        const { count: materiasCount } = await supabase.from("materias").select("*", { count: "exact", head: true })
+        // Obtener total de materias de la gestión actual
+        const { count: materiasCount } = await supabase
+          .from("materias")
+          .select("*", { count: "exact", head: true })
+          .eq("gestion_id", gestionActual.id)
 
         setStats({
           totalAlumnos: alumnosCount || 0,
@@ -44,7 +60,7 @@ export default function DashboardPage() {
     }
 
     fetchStats()
-  }, [])
+  }, [gestionActual])
 
   return (
     <MainLayout>
