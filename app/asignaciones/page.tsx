@@ -4,8 +4,7 @@ import { useEffect, useState, useCallback } from "react"
 import { MainLayout } from "@/components/layout/main-layout"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { 
   Dialog, 
@@ -23,7 +22,8 @@ import {
   SelectValue 
 } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
-import { Loader2, Plus, Search, Trash2, BookOpen, GraduationCap } from "lucide-react"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Loader2, Plus, Search, X, GraduationCap, BookOpen, User } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import type { Database } from "@/types/supabase"
 import { useToast } from "@/hooks/use-toast"
@@ -37,29 +37,32 @@ interface AsignacionConDetalles extends MateriaProfesor {
   materia?: Materia
 }
 
+interface ProfesorConMaterias {
+  profesor: Profesor
+  materias: AsignacionConDetalles[]
+}
+
 export default function AsignacionesPage() {
   const [asignaciones, setAsignaciones] = useState<AsignacionConDetalles[]>([])
   const [profesores, setProfesores] = useState<Profesor[]>([])
   const [materias, setMaterias] = useState<Materia[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState("")
-  const [isDialogOpen, setIsDialogOpen] = useState(false)
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [selectedProfesor, setSelectedProfesor] = useState<string>("")
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
+  const [selectedProfesorForAdd, setSelectedProfesorForAdd] = useState<Profesor | null>(null)
   const [selectedMateria, setSelectedMateria] = useState<string>("")
-  const [deleteId, setDeleteId] = useState<number | null>(null)
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [removingId, setRemovingId] = useState<number | null>(null)
   const { toast } = useToast()
 
   const fetchData = useCallback(async () => {
     try {
       setIsLoading(true)
       
-      // Fetch all data in parallel
       const [asignacionesRes, profesoresRes, materiasRes] = await Promise.all([
         supabase.from("materias_profesores").select("*"),
         supabase.from("profesores").select("*").eq("activo", true).order("apellidos"),
-        supabase.from("materias").select("*").order("codigo")
+        supabase.from("materias").select("*").order("curso_corto").order("nombre_corto")
       ])
 
       if (asignacionesRes.error) throw asignacionesRes.error
@@ -69,7 +72,6 @@ export default function AsignacionesPage() {
       setProfesores(profesoresRes.data || [])
       setMaterias(materiasRes.data || [])
 
-      // Combine data for display
       const asignacionesConDetalles: AsignacionConDetalles[] = (asignacionesRes.data || []).map((asig) => ({
         ...asig,
         profesor: profesoresRes.data?.find(p => p.cod_moodle === asig.cod_moodle_profesor),
@@ -93,25 +95,24 @@ export default function AsignacionesPage() {
     fetchData()
   }, [fetchData])
 
-  const handleCreateAsignacion = async () => {
-    if (!selectedProfesor || !selectedMateria) {
+  const handleAddMateria = async () => {
+    if (!selectedProfesorForAdd || !selectedMateria) {
       toast({
         title: "Error",
-        description: "Debe seleccionar un profesor y una materia",
+        description: "Debe seleccionar una materia",
         variant: "destructive"
       })
       return
     }
 
-    // Check if assignment already exists
     const existingAsignacion = asignaciones.find(
-      a => a.cod_moodle_profesor === selectedProfesor && a.codigo_materia === selectedMateria
+      a => a.cod_moodle_profesor === selectedProfesorForAdd.cod_moodle && a.codigo_materia === selectedMateria
     )
 
     if (existingAsignacion) {
       toast({
         title: "Error",
-        description: "Esta asignacion ya existe",
+        description: "Esta materia ya esta asignada a este profesor",
         variant: "destructive"
       })
       return
@@ -120,26 +121,24 @@ export default function AsignacionesPage() {
     setIsSubmitting(true)
     try {
       const { error } = await supabase.from("materias_profesores").insert({
-        cod_moodle_profesor: selectedProfesor,
+        cod_moodle_profesor: selectedProfesorForAdd.cod_moodle,
         codigo_materia: selectedMateria
       })
 
       if (error) throw error
 
       toast({
-        title: "Exito",
-        description: "Asignacion creada correctamente"
+        title: "Materia asignada",
+        description: "La materia fue asignada correctamente"
       })
 
-      setIsDialogOpen(false)
-      setSelectedProfesor("")
       setSelectedMateria("")
       fetchData()
     } catch (error) {
-      console.error("Error al crear asignacion:", error)
+      console.error("Error al asignar materia:", error)
       toast({
         title: "Error",
-        description: "No se pudo crear la asignacion",
+        description: "No se pudo asignar la materia",
         variant: "destructive"
       })
     } finally {
@@ -147,58 +146,70 @@ export default function AsignacionesPage() {
     }
   }
 
-  const handleDeleteAsignacion = async () => {
-    if (!deleteId) return
-
-    setIsSubmitting(true)
+  const handleRemoveMateria = async (asignacionId: number) => {
+    setRemovingId(asignacionId)
     try {
-      const { error } = await supabase.from("materias_profesores").delete().eq("id", deleteId)
+      const { error } = await supabase.from("materias_profesores").delete().eq("id", asignacionId)
 
       if (error) throw error
 
       toast({
-        title: "Exito",
-        description: "Asignacion eliminada correctamente"
+        title: "Materia removida",
+        description: "La materia fue removida correctamente"
       })
 
-      setIsDeleteDialogOpen(false)
-      setDeleteId(null)
       fetchData()
     } catch (error) {
-      console.error("Error al eliminar asignacion:", error)
+      console.error("Error al remover materia:", error)
       toast({
         title: "Error",
-        description: "No se pudo eliminar la asignacion",
+        description: "No se pudo remover la materia",
         variant: "destructive"
       })
     } finally {
-      setIsSubmitting(false)
+      setRemovingId(null)
     }
   }
 
-  const filteredAsignaciones = asignaciones.filter((asig) => {
+  const openAddDialog = (profesor: Profesor) => {
+    setSelectedProfesorForAdd(profesor)
+    setSelectedMateria("")
+    setIsAddDialogOpen(true)
+  }
+
+  // Agrupar por profesor
+  const profesoresConMaterias: ProfesorConMaterias[] = profesores.map(profesor => ({
+    profesor,
+    materias: asignaciones.filter(a => a.cod_moodle_profesor === profesor.cod_moodle)
+  }))
+
+  // Filtrar por termino de busqueda
+  const filteredProfesores = profesoresConMaterias.filter(({ profesor, materias: materiasProf }) => {
     const searchLower = searchTerm.toLowerCase()
-    const profesorNombre = asig.profesor ? `${asig.profesor.nombre} ${asig.profesor.apellidos}`.toLowerCase() : ""
-    const materiaNombre = asig.materia ? `${asig.materia.nombre_corto} ${asig.materia.nombre_largo}`.toLowerCase() : ""
-    const cursoCodigo = asig.materia?.curso_corto?.toLowerCase() || ""
+    const profesorNombre = `${profesor.nombre} ${profesor.apellidos}`.toLowerCase()
+    const tieneMateriaBuscada = materiasProf.some(m => 
+      m.materia?.nombre_corto?.toLowerCase().includes(searchLower) ||
+      m.materia?.nombre_largo?.toLowerCase().includes(searchLower) ||
+      m.materia?.curso_corto?.toLowerCase().includes(searchLower)
+    )
     
-    return profesorNombre.includes(searchLower) || 
-           materiaNombre.includes(searchLower) || 
-           cursoCodigo.includes(searchLower)
+    return profesorNombre.includes(searchLower) || tieneMateriaBuscada
   })
 
-  // Group by professor for better visualization
-  const asignacionesPorProfesor = filteredAsignaciones.reduce((acc, asig) => {
-    const key = asig.cod_moodle_profesor || "sin_profesor"
-    if (!acc[key]) {
-      acc[key] = {
-        profesor: asig.profesor,
-        materias: []
-      }
-    }
-    acc[key].materias.push(asig)
+  // Materias disponibles para asignar (no asignadas al profesor seleccionado)
+  const materiasDisponibles = selectedProfesorForAdd
+    ? materias.filter(m => !asignaciones.some(
+        a => a.cod_moodle_profesor === selectedProfesorForAdd.cod_moodle && a.codigo_materia === m.codigo
+      ))
+    : []
+
+  // Agrupar materias por curso para el selector
+  const materiasPorCurso = materiasDisponibles.reduce((acc, materia) => {
+    const curso = materia.curso_corto || "Sin curso"
+    if (!acc[curso]) acc[curso] = []
+    acc[curso].push(materia)
     return acc
-  }, {} as Record<string, { profesor?: Profesor; materias: AsignacionConDetalles[] }>)
+  }, {} as Record<string, Materia[]>)
 
   return (
     <MainLayout>
@@ -206,177 +217,168 @@ export default function AsignacionesPage() {
         <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
           <div>
             <h1 className="text-3xl font-bold">Asignaciones</h1>
-            <p className="text-muted-foreground">Gestiona la relacion entre profesores y materias</p>
+            <p className="text-muted-foreground">
+              Gestiona las materias de cada profesor
+            </p>
           </div>
-          <Button onClick={() => setIsDialogOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            Nueva Asignacion
-          </Button>
+          <div className="flex items-center gap-4">
+            <Badge variant="secondary" className="text-sm">
+              {asignaciones.length} asignaciones totales
+            </Badge>
+          </div>
         </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Profesores y sus Materias</CardTitle>
-            <CardDescription>
-              Total: {asignaciones.length} asignaciones
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="mb-4 flex items-center gap-2">
-              <Search className="h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Buscar por profesor, materia o curso..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="max-w-sm"
-              />
-            </div>
+        {/* Buscador */}
+        <div className="flex items-center gap-2">
+          <Search className="h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Buscar por profesor, materia o curso..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="max-w-md"
+          />
+        </div>
 
-            {isLoading ? (
-              <div className="flex h-40 items-center justify-center">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
-              </div>
-            ) : Object.keys(asignacionesPorProfesor).length === 0 ? (
-              <div className="flex h-40 flex-col items-center justify-center text-muted-foreground">
-                <GraduationCap className="h-12 w-12 mb-2" />
-                <p>No se encontraron asignaciones</p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {Object.entries(asignacionesPorProfesor).map(([key, { profesor, materias: materiasAsig }]) => (
-                  <Card key={key} className="border-l-4 border-l-primary">
-                    <CardHeader className="pb-2">
-                      <div className="flex items-center gap-2">
+        {isLoading ? (
+          <div className="flex h-60 items-center justify-center">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          </div>
+        ) : filteredProfesores.length === 0 ? (
+          <div className="flex h-60 flex-col items-center justify-center text-muted-foreground">
+            <User className="h-12 w-12 mb-2" />
+            <p>No se encontraron profesores</p>
+          </div>
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {filteredProfesores.map(({ profesor, materias: materiasProf }) => (
+              <Card key={profesor.cod_moodle} className="flex flex-col">
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10">
                         <GraduationCap className="h-5 w-5 text-primary" />
-                        <CardTitle className="text-lg">
-                          {profesor ? `${profesor.apellidos}, ${profesor.nombre}` : "Profesor no encontrado"}
+                      </div>
+                      <div className="min-w-0">
+                        <CardTitle className="text-base truncate">
+                          {profesor.apellidos}, {profesor.nombre}
                         </CardTitle>
-                        <Badge variant="secondary">{materiasAsig.length} materias</Badge>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {profesor.cod_moodle}
+                        </p>
                       </div>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="rounded-md border">
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead>Codigo</TableHead>
-                              <TableHead>Materia</TableHead>
-                              <TableHead>Curso</TableHead>
-                              <TableHead className="w-[100px]">Acciones</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {materiasAsig.map((asig) => (
-                              <TableRow key={asig.id}>
-                                <TableCell className="font-mono text-sm">
-                                  {asig.codigo_materia}
-                                </TableCell>
-                                <TableCell>
-                                  <div className="flex items-center gap-2">
-                                    <BookOpen className="h-4 w-4 text-muted-foreground" />
-                                    {asig.materia?.nombre_largo || asig.materia?.nombre_corto || "-"}
-                                  </div>
-                                </TableCell>
-                                <TableCell>
-                                  {asig.materia?.curso_corto ? (
-                                    <Badge variant="outline">{asig.materia.curso_corto}</Badge>
-                                  ) : "-"}
-                                </TableCell>
-                                <TableCell>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => {
-                                      setDeleteId(asig.id)
-                                      setIsDeleteDialogOpen(true)
-                                    }}
-                                  >
-                                    <Trash2 className="h-4 w-4 text-destructive" />
-                                  </Button>
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                    </div>
+                    <Button 
+                      size="sm" 
+                      variant="outline"
+                      onClick={() => openAddDialog(profesor)}
+                      className="shrink-0"
+                    >
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent className="flex-1 pt-0">
+                  {materiasProf.length === 0 ? (
+                    <div className="flex h-20 flex-col items-center justify-center rounded-lg border border-dashed text-muted-foreground">
+                      <BookOpen className="h-5 w-5 mb-1" />
+                      <p className="text-xs">Sin materias asignadas</p>
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      {materiasProf.map((asig) => (
+                        <Badge
+                          key={asig.id}
+                          variant="secondary"
+                          className="group flex items-center gap-1 pr-1 transition-colors hover:bg-destructive/10"
+                        >
+                          <span className="max-w-[150px] truncate" title={asig.materia?.nombre_largo || ""}>
+                            {asig.materia?.nombre_corto || asig.codigo_materia}
+                          </span>
+                          {asig.materia?.curso_corto && (
+                            <span className="text-xs opacity-60">
+                              ({asig.materia.curso_corto})
+                            </span>
+                          )}
+                          <button
+                            onClick={() => handleRemoveMateria(asig.id)}
+                            disabled={removingId === asig.id}
+                            className="ml-1 rounded-full p-0.5 opacity-50 transition-opacity hover:bg-destructive hover:text-destructive-foreground hover:opacity-100 disabled:opacity-30"
+                            title="Quitar materia"
+                          >
+                            {removingId === asig.id ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <X className="h-3 w-3" />
+                            )}
+                          </button>
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* Dialog para crear asignacion */}
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent>
+      {/* Dialog para agregar materia */}
+      <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Nueva Asignacion</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <GraduationCap className="h-5 w-5" />
+              Agregar Materia
+            </DialogTitle>
             <DialogDescription>
-              Asigna una materia a un profesor
+              {selectedProfesorForAdd && (
+                <>Asignar materia a <strong>{selectedProfesorForAdd.apellidos}, {selectedProfesorForAdd.nombre}</strong></>
+              )}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="profesor">Profesor</Label>
-              <Select value={selectedProfesor} onValueChange={setSelectedProfesor}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleccionar profesor" />
-                </SelectTrigger>
-                <SelectContent>
-                  {profesores.map((profesor) => (
-                    <SelectItem key={profesor.cod_moodle} value={profesor.cod_moodle}>
-                      {profesor.apellidos}, {profesor.nombre}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="materia">Materia</Label>
+              <Label htmlFor="materia">Seleccionar Materia</Label>
               <Select value={selectedMateria} onValueChange={setSelectedMateria}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Seleccionar materia" />
+                  <SelectValue placeholder="Buscar y seleccionar materia..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {materias.map((materia) => (
-                    <SelectItem key={materia.codigo} value={materia.codigo}>
-                      {materia.nombre_largo} ({materia.curso_corto || "Sin curso"})
-                    </SelectItem>
-                  ))}
+                  <ScrollArea className="h-[300px]">
+                    {Object.entries(materiasPorCurso).map(([curso, materiasCurso]) => (
+                      <div key={curso}>
+                        <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground bg-muted/50 sticky top-0">
+                          {curso}
+                        </div>
+                        {materiasCurso.map((materia) => (
+                          <SelectItem key={materia.codigo} value={materia.codigo}>
+                            <div className="flex flex-col">
+                              <span>{materia.nombre_corto}</span>
+                              <span className="text-xs text-muted-foreground truncate max-w-[250px]">
+                                {materia.nombre_largo}
+                              </span>
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </div>
+                    ))}
+                    {materiasDisponibles.length === 0 && (
+                      <div className="p-4 text-center text-muted-foreground text-sm">
+                        No hay materias disponibles para asignar
+                      </div>
+                    )}
+                  </ScrollArea>
                 </SelectContent>
               </Select>
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
-              Cancelar
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
+              Cerrar
             </Button>
-            <Button onClick={handleCreateAsignacion} disabled={isSubmitting}>
+            <Button onClick={handleAddMateria} disabled={isSubmitting || !selectedMateria}>
               {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Crear Asignacion
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Dialog para confirmar eliminacion */}
-      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Confirmar Eliminacion</DialogTitle>
-            <DialogDescription>
-              Esta seguro de que desea eliminar esta asignacion? Esta accion no se puede deshacer.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>
-              Cancelar
-            </Button>
-            <Button variant="destructive" onClick={handleDeleteAsignacion} disabled={isSubmitting}>
-              {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Eliminar
+              Asignar Materia
             </Button>
           </DialogFooter>
         </DialogContent>
