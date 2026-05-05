@@ -4,8 +4,7 @@ import { useState, useEffect } from "react"
 import { MainLayout } from "@/components/layout/main-layout"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useToast } from "@/components/ui/use-toast"
-import { supabase, sortCursos } from "@/lib/supabase"
-import { useGestion } from "@/context/gestion-context"
+import { supabase } from "@/lib/supabase"
 import { CentralizadorInterno } from "@/components/reportes/centralizador-interno"
 import { CentralizadorMinedu } from "@/components/reportes/centralizador-minedu"
 import { BoletinNotas } from "@/components/reportes/boletin-notas"
@@ -72,30 +71,20 @@ export default function ReportesPage() {
   const [alumnosSecundaria, setAlumnosSecundaria] = useState<Alumno[]>([])
 
   const { toast } = useToast()
-  const { gestionActual } = useGestion()
 
   // Cargar cursos
   useEffect(() => {
     const fetchCursos = async () => {
-      if (!gestionActual) return
-      const { data } = await supabase
-        .from("cursos")
-        .select("*")
-        .eq("gestion_id", gestionActual.id)
-        .order("nombre_corto")
-      if (data) setCursos(sortCursos(data))
+      const { data } = await supabase.from("cursos").select("*").order("nombre_corto")
+      if (data) setCursos(data)
     }
     fetchCursos()
-  }, [gestionActual])
+  }, [])
 
   // Cargar áreas de materias - Corregido para usar la tabla "areas"
   useEffect(() => {
     const fetchAreas = async () => {
-      if (!gestionActual) return
-      const { data, error } = await supabase
-        .from("areas")
-        .select("*")
-        .eq("gestion_id", gestionActual.id)
+      const { data, error } = await supabase.from("areas").select("*")
       if (error) {
         console.error("Error al cargar áreas:", error)
       } else if (data) {
@@ -103,12 +92,12 @@ export default function ReportesPage() {
       }
     }
     fetchAreas()
-  }, [gestionActual])
+  }, [])
 
   // Cargar alumnos cuando se selecciona un curso
   useEffect(() => {
     const fetchAlumnos = async () => {
-      if (!selectedCurso || !gestionActual) {
+      if (!selectedCurso) {
         setAlumnos([])
         return
       }
@@ -117,7 +106,6 @@ export default function ReportesPage() {
         .from("alumnos")
         .select("*")
         .eq("curso_corto", selectedCurso)
-        .eq("gestion_id", gestionActual.id)
         .eq("activo", true)
         .order("apellidos")
 
@@ -125,7 +113,7 @@ export default function ReportesPage() {
     }
 
     fetchAlumnos()
-  }, [selectedCurso, gestionActual])
+  }, [selectedCurso])
 
   // Función para calcular el promedio de un alumno
   const calcularPromedioAlumno = (alumnoId: string, calificacionesRelevantes: Calificacion[]): number => {

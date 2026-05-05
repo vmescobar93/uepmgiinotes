@@ -13,8 +13,6 @@ import {
   Settings,
   X,
   Database,
-  Link2,
-  Layers,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -49,16 +47,6 @@ const navItems = [
     title: "Materias",
     href: "/materias",
     icon: BookOpen,
-  },
-  {
-    title: "Asignaciones",
-    href: "/asignaciones",
-    icon: Link2,
-  },
-  {
-    title: "Agrupaciones",
-    href: "/agrupaciones",
-    icon: Layers,
   },
   {
     title: "Calificaciones",
