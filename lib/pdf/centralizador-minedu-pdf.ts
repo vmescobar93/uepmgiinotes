@@ -11,6 +11,36 @@ type Materia = Database["public"]["Tables"]["materias"]["Row"]
 type Calificacion = Database["public"]["Tables"]["calificaciones"]["Row"]
 type Agrupacion = Database["public"]["Tables"]["agrupaciones_materias"]["Row"]
 
+// Orden fijo de columnas del centralizador MINEDU (por código / nombre_corto en MAYÚSCULAS)
+const ORDEN_MINEDU_1RO_2DO = ["LEN", "ING", "CS", "MUS", "AP", "EF", "MAT", "TEC", "CN", "COS", "VER"]
+
+const ORDEN_MINEDU_3RO_6TO = [
+  "LEN",
+  "ING",
+  "CS",
+  "MUS",
+  "AP",
+  "EF",
+  "MAT",
+  "TEC",
+  "FIS",
+  "QUI",
+  "CN",
+  "COS",
+  "VER",
+]
+
+/** Devuelve el orden que corresponde según el nivel del curso. [] = no reordenar */
+function getOrdenMineduPorCurso(nombreCurso?: string | null): string[] {
+  const nombre = String(nombreCurso ?? "").trim()
+
+  // Solo aplica a secundaria: primaria conserva su orden actual de BD
+  if (!/secundaria/i.test(nombre)) return []
+
+  const nivel = Number.parseInt(nombre.charAt(0), 10)
+  return nivel >= 3 ? ORDEN_MINEDU_3RO_6TO : ORDEN_MINEDU_1RO_2DO
+}
+
 /**
  * Genera un centralizador MINEDU de calificaciones en PDF
  */
@@ -22,6 +52,7 @@ export async function generarCentralizadorMineduPDF(
   agrupaciones: Agrupacion[],
   trimestre: string,
   nombreInstitucion: string,
+  ordenPersonalizado?: string[],
 ): Promise<jsPDF> {
   const doc = configurarDocumentoPDF({
     orientation: "landscape",
@@ -193,8 +224,23 @@ export async function generarCentralizadorMineduPDF(
     })
   })
 
-  // Ordenar todos los elementos por el campo orden
-  elementosOrdenados.sort((a, b) => a.orden - b.orden)
+  // Ordenar según el orden MINEDU (o el orden que se pase por parámetro)
+  const ordenDeseado = (
+    ordenPersonalizado?.length ? ordenPersonalizado : getOrdenMineduPorCurso(curso?.nombre_largo)
+  ).map((c) => c.trim().toUpperCase())
+
+  const posicionEnOrden = (nombre: string) => {
+    const i = ordenDeseado.indexOf(String(nombre).trim().toUpperCase())
+    return i === -1 ? Number.POSITIVE_INFINITY : i
+  }
+
+  elementosOrdenados.sort((a, b) => {
+    const pa = posicionEnOrden(a.nombre)
+    const pb = posicionEnOrden(b.nombre)
+    if (pa !== pb) return pa - pb
+    // Lo que no esté en la lista conserva el orden original de BD, al final
+    return a.orden - b.orden
+  })
 
   // Obtener la nota de un alumno en una materia específica
   const getCalificacion = (alumnoId: string, materiaId: string): number | null => {
@@ -294,8 +340,6 @@ export async function generarCentralizadorMineduPDF(
     doc.text(text, 20, y)
     y += 4
   })
-
-
 
   // Pie de página
   const pageCount = doc.getNumberOfPages()
